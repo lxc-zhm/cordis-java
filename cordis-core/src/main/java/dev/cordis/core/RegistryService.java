@@ -15,6 +15,7 @@ import java.util.Map;
  */
 public final class RegistryService {
 
+    @SuppressWarnings("unused")
     private final Context root;
     private final Map<Plugin, PluginRuntime> internal = new LinkedHashMap<>();
     private int counter = 0;

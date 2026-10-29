@@ -1,0 +1,5 @@
+./cordis-core/target/*
+
+.vscode/*
+
+./cordis-example/target/*

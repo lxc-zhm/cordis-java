@@ -1,0 +1,7 @@
+dev/cordis/example/plugins/DbService.class
+dev/cordis/example/plugins/GreetingPluginV1.class
+dev/cordis/example/plugins/DatabasePlugin.class
+dev/cordis/example/plugins/UsersService.class
+dev/cordis/example/plugins/GreetingPluginV2.class
+dev/cordis/example/plugins/UserPlugin.class
+dev/cordis/example/Main.class

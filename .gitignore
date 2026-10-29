@@ -1,5 +1,4 @@
-./cordis-core/target/*
-
 .vscode/*
+cordis-example/target/
 
-./cordis-example/target/*
+cordis-core/target/

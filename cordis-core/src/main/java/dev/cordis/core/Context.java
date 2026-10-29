@@ -148,7 +148,7 @@ public final class Context {
         return merged;
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    @SuppressWarnings({"unchecked"})
     private static Map<Object, Object> castMap(Map<?, ?> m) {
         return (Map<Object, Object>) m;
     }

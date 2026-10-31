@@ -27,48 +27,63 @@ public final class RegistryService {
         this.root = root;
     }
 
-    /** 分配下一个运行实例编号(每调用一次加一)。 */
-    synchronized int nextUid() {
+    /**
+     * 分配下一个运行实例编号(每调用一次加一)。
+     */
+    int nextUid() {
         return ++counter;
     }
 
-    /** 已注册的插件数量。 */
-    public synchronized int size() {
-        return internal.size();
+    /**
+     * 已注册的插件数量。
+     */
+    public int size() {
+        return root.atomic(internal::size);
     }
 
-    /** 所有已注册的插件运行时记录。 */
-    public synchronized Collection<PluginRuntime> runtimes() {
-        return List.copyOf(internal.values());
+    /**
+     * 所有已注册的插件运行时记录。
+     */
+    public Collection<PluginRuntime> runtimes() {
+        return root.atomic(() -> List.copyOf(internal.values()));
     }
 
-    /** 查某个插件的运行时记录,没注册返回 null。 */
-    public synchronized PluginRuntime get(Plugin plugin) {
-        return internal.get(plugin);
+    /**
+     * 查某个插件的运行时记录,没注册返回 null。
+     */
+    public PluginRuntime get(Plugin plugin) {
+        return root.atomic(() -> internal.get(plugin));
     }
 
-    /** 卸载某插件的全部运行实例,并删除它的运行时记录。 */
-    public synchronized void delete(Plugin plugin) {
-        PluginRuntime runtime = internal.remove(plugin);
-        if (runtime == null) return;
-        for (Fiber fiber : List.copyOf(runtime.fibers)) {
+    /**
+     * 卸载某插件的全部运行实例,并删除它的运行时记录。
+     */
+    public void delete(Plugin plugin) {
+        List<Fiber> fibers = root.atomic(() -> {
+            PluginRuntime runtime = internal.get(plugin);
+            return runtime == null ? List.<Fiber>of() : List.copyOf(runtime.fibers);
+        });
+        for (Fiber fiber : fibers) {
             fiber.dispose();
         }
     }
 
-    synchronized void removeRuntime(PluginRuntime runtime) {
-        internal.remove(runtime.plugin);
+    void removeRuntime(PluginRuntime runtime) {
+        root.atomic(() -> {
+            internal.remove(runtime.plugin, runtime);
+            return null;
+        });
     }
 
-    /** 卸载所有插件的所有运行实例,并清空注册表(应用关闭时用)。 */
-    public synchronized void deleteAll() {
-        List<PluginRuntime> runtimes = new ArrayList<>(internal.values());
-        internal.clear();
-        for (PluginRuntime runtime : runtimes) {
-            for (Fiber fiber : List.copyOf(runtime.fibers)) {
-                fiber.dispose();
-            }
-        }
+    /**
+     * 卸载所有插件的所有运行实例,并清空注册表(应用关闭时用)。
+     */
+    public void deleteAll() {
+        List<Fiber> fibers = root.atomic(() -> internal.values().stream().flatMap(runtime -> List.copyOf(runtime.fibers).stream()).toList());
+        // Issue every retirement before waiting, so dependencies can drain without order constraints.
+        var tasks = fibers.stream().map(Fiber::disposeAsync).map(java.util.concurrent.CompletionStage::toCompletableFuture)
+                .toArray(java.util.concurrent.CompletableFuture[]::new);
+        if (!root.inRuntime()) dev.cordis.core.effect.Stages.join(java.util.concurrent.CompletableFuture.allOf(tasks));
     }
 
     /**
@@ -77,10 +92,12 @@ public final class RegistryService {
      * @return 新建的运行实例;之后它的生命周期由依赖变化自动驱动
      */
     public Fiber plugin(Context ctx, Plugin plugin, Object config) {
-        if (plugin == null) throw new CordisException(CordisException.Code.INVALID_PLUGIN, "plugin is null");
-        ctx.fiber().assertActive();
-        PluginRuntime runtime = internal.computeIfAbsent(plugin, PluginRuntime::new);
-        return new Fiber(ctx, config, plugin, runtime);
+        return root.atomic(() -> {
+            if (plugin == null) throw new CordisException(CordisException.Code.INVALID_PLUGIN, "plugin is null");
+            ctx.fiber().assertActive();
+            PluginRuntime runtime = internal.computeIfAbsent(plugin, PluginRuntime::new);
+            return new Fiber(ctx, config, plugin, runtime);
+        });
     }
 
     /**
@@ -91,7 +108,9 @@ public final class RegistryService {
         return plugin(ctx, plugin, null);
     }
 
-    /** 把依赖名列表整理成映射(值先放 null,保留声明顺序)。 */
+    /**
+     * 把依赖名列表整理成映射(值先放 null,保留声明顺序)。
+     */
     static Map<String, Object> resolveInject(List<String> inject) {
         Map<String, Object> map = new LinkedHashMap<>();
         if (inject != null) for (String name : inject) map.put(name, null);

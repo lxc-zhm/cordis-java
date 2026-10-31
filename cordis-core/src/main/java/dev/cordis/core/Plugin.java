@@ -17,17 +17,32 @@ import java.util.List;
  */
 public interface Plugin {
 
-    /** 插件显示名,用于日志和排查;可为 null(用类名兜底)。 */
+    /**
+     * 插件显示名,用于日志和排查;可为 null(用类名兜底)。
+     */
     default String name() {
         return null;
     }
 
-    /** 依赖声明(注入):需要的服务名;全都可用时才会启动,缺一个就一直待命。 */
+    /**
+     * 依赖声明(注入):需要的服务名;全都可用时才会启动,缺一个就一直待命。
+     */
     default List<String> inject() {
         return List.of();
     }
 
-    /** 可选的配置校验器:启动前先校验配置;null 表示不校验。 */
+    /**
+     * Dependency declarations with optional per-service interception metadata.
+     */
+    default java.util.Map<String, Object> injections() {
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        for (String name : inject()) result.put(name, null);
+        return result;
+    }
+
+    /**
+     * 可选的配置校验器:启动前先校验配置;null 表示不校验。
+     */
     default ConfigSchema<?> schema() {
         return null;
     }
@@ -45,7 +60,9 @@ public interface Plugin {
      */
     Object apply(Context ctx, Object config);
 
-    /** 用一个 lambda 快速包出一个插件。 */
+    /**
+     * 用一个 lambda 快速包出一个插件。
+     */
     static Plugin of(String name, List<String> inject, java.util.function.BiFunction<Context, Object, Object> body) {
         return new Plugin() {
             @Override

@@ -1,149 +1,103 @@
 package dev.cordis.core.runtime;
 
-import dev.cordis.core.CordisException;
-import dev.cordis.core.ConfigSchema;
-import dev.cordis.core.Plugin;
-import dev.cordis.core.coeffect.Impl;
-import dev.cordis.core.coeffect.ReflectService;
-import dev.cordis.core.coeffect.RealmKey;
-import dev.cordis.core.effect.Disposable;
-import dev.cordis.core.effect.EffectCallback;
-import dev.cordis.core.effect.EffectMeta;
+import dev.cordis.core.*;
+import dev.cordis.core.coeffect.*;
+import dev.cordis.core.effect.*;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.function.BooleanSupplier;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.*;
 
 /**
- * 插件的一次“运行实例”:一个插件装一次,就是一个 fiber。
- *
- * <p>fiber 记录三样东西:</p>
- * <ul>
- *   <li><b>依赖快照</b>(store)—— 启动那一刻,各个依赖服务分别由谁提供;</li>
- *   <li><b>目标视图</b>(target)—— “我的每个依赖现在由谁提供”的摘要;</li>
- *   <li><b>撤销动作栈</b> —— 登记过的所有效应怎么撤销。</li>
- * </ul>
- *
- * <p>工作方式:依赖有变化就重算 target;target 变了就触发加载(reload)
- * 或卸载(unload)。转换一旦开始就一口气跑完,跑完再对比最新 target,
- * 不一致就接着跑下一个转换——保证不会停在“改到一半”的中间状态。</p>
- *
- * <p>卸载顺序有讲究:提供者停止服务后,先让所有依赖它的 fiber 卸载完,
- * 最后才跑提供者自己的撤销动作——这样依赖方的收尾代码还能正常用到依赖。</p>
+ * One component instance. All lifecycle mutations are serialized by the root context.
  */
 public final class Fiber {
-
     static final String INACTIVE = "__INACTIVE__";
-
-    /** 唯一编号;根 fiber 是 0,卸载后置为 null。 */
-    public Long uid;
-    /** 从哪个上下文加载的(父上下文)。 */
+    public volatile Long uid;
     public final Context parentCtx;
-    /** 本 fiber 的插件运行所在的上下文(父上下文的子上下文)。 */
     public final Context ctx;
-    /** 声明的依赖:服务名 → 拦截配置(没有就放 null)。 */
     public final Map<String, Object> inject;
-    /** 所属插件的共用记录;根 fiber 为 null。 */
     public final PluginRuntime runtime;
-    /** 插件定义。 */
     public final Plugin plugin;
-
-    /** 加载期间的依赖快照(记录每个依赖是谁提供的);未加载时为 null。 */
-    public Map<String, Impl> store;
-    /** 校验后的配置。 */
-    public Object config;
-    /** 原始配置,每次激活前重新校验。 */
-    public Object rawConfig;
-    /** 当前生命周期状态;每次变化都会发 internal/status 事件。 */
-    public FiberState state = FiberState.PENDING;
-    /** 目标视图摘要:每个依赖的提供者编号拼起来;有依赖缺失时为 INACTIVE。 */
-    public String target = INACTIVE;
-
+    public volatile Map<String, Impl> store;
+    public volatile Object config;
+    public volatile Object rawConfig;
+    public volatile FiberState state = FiberState.PENDING;
+    public volatile String target = INACTIVE;
+    private String epoch = INACTIVE;
+    private long revision;
+    private boolean running;
+    private boolean loaded;
+    private Throwable error;
+    private CompletableFuture<Void> stable = Stages.done();
+    private CompletionStage<Void> retirement;
+    private CompletableFuture<Void> updateBarrier = Stages.done();
     private Disposable retireHandle;
+    private final Map<String, Impl> pendingStore = new LinkedHashMap<>();
+    private final List<EffectRecord> records = new ArrayList<>();
+    private final Deque<EffectMeta> metaStack = new ArrayDeque<>();
+    private final Set<Impl> provisions = new LinkedHashSet<>();
+    private final Set<Impl> retained = new LinkedHashSet<>();
+    private final Map<String, Object> attachments = new HashMap<>();
 
-    // ---- internals
-    final Map<String, Impl> pendingStore = new LinkedHashMap<>();
-    /** 世代:当前目标视图对应的提供者世代摘要;有依赖缺失时为 INACTIVE,变化即触发转换。 */
-    String epoch = INACTIVE;
-    Runnable inertia = null;
-    Throwable error;
-    /** 撤销动作栈:登记过的所有效应,卸载时按后进先出逆序执行。 */
-    final List<EffectRecord> records = new ArrayList<>();
-    final Deque<EffectMeta> metaStack = new ArrayDeque<>();
-
-    /** 一条已登记的效应:撤销动作 + 效应元数据。 */
-    static final class EffectRecord {
-        final Disposable disposable;
-        final EffectMeta meta;
-
-        EffectRecord(Disposable disposable, EffectMeta meta) {
-            this.disposable = disposable;
-            this.meta = meta;
-        }
+    public Object attachment(String key) {
+        return root().atomic(() -> attachments.get(key));
     }
 
-    Fiber(Context parentCtx, Object rawConfig, Plugin plugin, PluginRuntime runtime) {
-        this.parentCtx = parentCtx;
-        this.rawConfig = rawConfig;
+    public void attach(String key, Object value) {
+        root().atomic(() -> {
+            attachments.put(key, value);
+            return null;
+        });
+    }
+
+    /**
+     * Commit an update handled in place by a component's internal/update hook.
+     */
+    public void commitConfig(Object value) {
+        root().atomic(() -> {
+            assertActive();
+            rawConfig = config = value;
+            ctx.events().emit(ctx, "internal/config-updated", this, value);
+            return null;
+        });
+    }
+
+    Fiber(Context parent, Object raw, Plugin plugin, PluginRuntime runtime) {
+        this.parentCtx = parent;
+        this.rawConfig = raw;
         this.plugin = plugin;
         this.runtime = runtime;
-        this.inject = runtime != null
-                ? RegistryService.resolveInject(plugin.inject())
-                : new LinkedHashMap<>();
-        Context root = parentCtx.getRoot();
-
-        if (runtime != null) {
-            this.uid = (long) root.registry().nextUid();
-            this.ctx = parentCtx.deriveChild(this);
-            for (Map.Entry<String, Object> e : inject.entrySet()) {
-                if (e.getValue() != null) ctx.interceptSelf(e.getKey(), e.getValue());
-            }
-
-            // 实例化原语(论文 Definition 52):登记在父实例上的这个效应即 O-Insert,
-            // 其逆(下面的撤销动作)即 O-Retire,因此卸载父实例会级联卸载子实例。
-            this.retireHandle = parentCtx.fiber().effect(cb -> {
-                runtime.fibers.add(this);
-                return (Disposable) () -> {
-                    this.uid = null;
-                    root.events().emit(null, "internal/plugin", this);
-                    runtime.fibers.remove(this);
-                    if (runtime.fibers.isEmpty()) root.registry().removeRuntime(runtime);
-                    setEpoch(INACTIVE);
-                    runChain();
-                    // 待命中的运行实例可能已登记效应;这里显式卸载它们。
-                    if (inertia == null && !records.isEmpty()) {
-                        state = FiberState.UNLOADING;
-                        inertia = this::unloadCycle;
-                        runChain();
-                    }
-                };
-            }, "ctx.plugin()");
-
-            root.events().emit(null, "internal/plugin", this);
-
-            if (uid != null && parentCtx.fiber().state != FiberState.UNLOADING) {
-                for (String name : inject.keySet()) checkImpl(name);
-                refresh();
-            }
-        } else {
-            // 根运行实例:整个应用的根
-            this.uid = 0L;
-            this.ctx = parentCtx;
-            this.state = FiberState.ACTIVE;
-            this.store = new LinkedHashMap<>();
-            this.target = "";
-            this.epoch = "";
+        inject = runtime == null ? Map.of() : new LinkedHashMap<>(plugin.injections());
+        if (runtime == null) {
+            uid = 0L;
+            ctx = parent;
+            state = FiberState.ACTIVE;
+            store = new LinkedHashMap<>();
+            epoch = target = "";
+            loaded = true;
+            return;
+        }
+        uid = (long) parent.registry().nextUid();
+        ctx = parent.deriveChild(this);
+        inject.forEach((name, value) -> {
+            if (value != null) ctx.interceptSelf(name, value);
+        });
+        retireHandle = parent.fiber().effect(c -> {
+            runtime.fibers.add(this);
+            return (AsyncDisposable) this::retire;
+        }, "ctx.plugin()");
+        ctx.events().emit(null, "internal/plugin", this);
+        if (uid != null && parent.fiber().state != FiberState.UNLOADING) {
+            inject.keySet().forEach(this::checkImpl);
+            refresh();
         }
     }
 
-    /** 插件显示名:从自己往上找最近的命名祖先;都没有就是 root。 */
+    private Context root() {
+        return ctx.getRoot();
+    }
+
     public String name() {
         Fiber f = this;
         while (f.runtime != null) {
@@ -153,338 +107,448 @@ public final class Fiber {
         return "root";
     }
 
-    /** 已卸载就抛异常(防止在死掉的运行实例上继续登记效应)。 */
     public void assertActive() {
-        if (uid != null) return;
-        throw new CordisException(CordisException.Code.INACTIVE_EFFECT);
+        if (uid == null) throw new CordisException(CordisException.Code.INACTIVE_EFFECT);
     }
 
-    // ------------------------------------------------------------------ effects
-
     /**
-     * 登记一个“可撤销的效应回调”(本框架最核心的机制)。
-     *
-     * <p>回调立即执行;它返回的撤销动作会被收进本 fiber 的栈里,
-     * 卸载时(或手动调用返回值时)按逆序执行。返回的 disposer 调两次无害。</p>
-     *
-     * <p>回调返回惰性 Iterable 时按“阶段”逐个取:每取一个阶段前先检查
-     * 目标是否还成立,不成立就停下——已完成的部分照常登记,未开始的不再执行。</p>
-     *
-     * @param callback 效应回调
-     * @param label    诊断用的名字(见 getEffects)
-     * @return 手动撤销该效应的动作
+     * An owner-visible setup barrier is installed before any user code runs.
      */
+    private final class EffectRecord implements AsyncDisposable {
+        Fiber owner = Fiber.this;
+        final EffectMeta meta;
+        final List<Disposable> inverses = new ArrayList<>();
+        final CompletableFuture<Void> setup = new CompletableFuture<>();
+        boolean armed = true;
+        CompletableFuture<Void> cleanup;
+
+        EffectRecord(String label) {
+            meta = new EffectMeta(label);
+        }
+
+        @Override
+        public CompletionStage<Void> disposeAsync() {
+            return root().atomic(() -> {
+                if (cleanup != null) return cleanup;
+                armed = false;
+                cleanup = new CompletableFuture<>();
+                setup.handle((v, e) -> null).thenCompose(v -> root().atomic(() -> unwind(inverses)))
+                        .whenComplete((v, e) -> root().atomic(() -> {
+                            owner.records.remove(this);
+                            if (e == null) cleanup.complete(null);
+                            else cleanup.completeExceptionally(Stages.cause(e));
+                            return null;
+                        }));
+                return cleanup;
+            });
+        }
+
+        @Override
+        public void dispose() {
+            boolean nested = root().inRuntime();
+            CompletionStage<Void> task = disposeAsync();
+            if (!nested) Stages.join(task);
+        }
+    }
+
     public Disposable effect(EffectCallback callback, String label) {
-        assertActive();
-        if (state == FiberState.UNLOADING) {
-            throw new CordisException(CordisException.Code.INACTIVE_EFFECT);
-        }
-        List<Disposable> local = new ArrayList<>();
-        boolean[] armed = {true};
-        EffectMeta meta = new EffectMeta(label);
-        if (!metaStack.isEmpty()) metaStack.peek().children.add(meta);
-        metaStack.push(meta);
-        try {
-            Object result = callback.execute(ctx);
-            collectResult(result, local, () -> armed[0]);
-        } catch (Throwable t) {
-            runReverse(local); // rollback partial effects
-            throw t;
-        } finally {
-            metaStack.pop();
-        }
-
-        EffectRecord[] self = new EffectRecord[1];
-        Disposable wrapper = () -> {
-            if (!armed[0]) return;
-            armed[0] = false;
-            records.remove(self[0]);
-            runReverse(local);
-        };
-        self[0] = new EffectRecord(wrapper, meta);
-        records.add(self[0]);
-        return wrapper;
-    }
-
-    private static void collectResult(Object result, List<Disposable> sink, BooleanSupplier guard) {
-        switch (result) {
-            case null -> {
-                return;
-            }
-            case Disposable d -> {
-                sink.add(d);
-                return;
-            }
-            case Iterable<?> it -> {
-                for (Object object : it) {
-                    if (!guard.getAsBoolean()) break;
-                    if (object == null) continue;
-                    if (!(object instanceof Disposable d)) {
-                        throw new IllegalArgumentException("Invalid effect: expected Disposable, got " + object.getClass());
+        return root().atomic(() -> {
+            assertActive();
+            if (state == FiberState.UNLOADING) throw new CordisException(CordisException.Code.INACTIVE_EFFECT);
+            EffectRecord record = new EffectRecord(label);
+            records.add(record);
+            if (!metaStack.isEmpty()) metaStack.peek().children.add(record.meta);
+            metaStack.push(record.meta);
+            try {
+                CompletionStage<Void> task = collect(callback.execute(ctx), record.inverses, () -> record.armed);
+                task.whenComplete((v, e) -> root().atomic(() -> {
+                    if (e == null) record.setup.complete(null);
+                    else {
+                        record.setup.completeExceptionally(Stages.cause(e));
+                        record.disposeAsync();
                     }
-                    sink.add(d);
-                }
-                return;
+                    return null;
+                }));
+                if (record.setup.isCompletedExceptionally()) Stages.join(record.setup);
+            } catch (Throwable e) {
+                record.setup.completeExceptionally(e);
+                record.disposeAsync();
+                throw Stages.propagate(e);
+            } finally {
+                metaStack.pop();
             }
-            default -> {
-            }
-        }
-        throw new IllegalArgumentException("Invalid effect: " + result.getClass());
+            return record;
+        });
     }
 
-    private static void runReverse(List<Disposable> disposables) {
-        for (int i = disposables.size() - 1; i >= 0; i--) {
-            disposables.get(i).dispose();
+    private CompletionStage<Void> collect(Object value, List<Disposable> sink, BooleanSupplier guard) {
+        if (value == null) return Stages.done();
+        if (value instanceof Disposable disposable) {
+            sink.add(disposable);
+            return Stages.done();
         }
+        if (value instanceof CompletionStage<?> stage)
+            return stage.thenCompose(result -> root().atomic(() -> collect(result, sink, guard)));
+        if (value instanceof AsyncEffect iterator) return collectAsync(iterator, sink, guard);
+        if (value instanceof Iterable<?> iterable) {
+            Iterator<?> iterator = iterable.iterator();
+            // Test the guard BEFORE advancing the lazy iterator. Always retain a completed step's inverse.
+            while (guard.getAsBoolean() && iterator.hasNext()) {
+                Object next = iterator.next();
+                if (next == null) continue;
+                if (!(next instanceof Disposable disposable))
+                    throw new IllegalArgumentException("Invalid effect stage: " + next);
+                sink.add(disposable);
+            }
+            return Stages.done();
+        }
+        throw new IllegalArgumentException("Invalid effect: " + value.getClass());
     }
 
-    /** 当前登记的所有效应的元数据(诊断用)。 */
+    private CompletionStage<Void> collectAsync(AsyncEffect iterator, List<Disposable> sink, BooleanSupplier guard) {
+        // Trampoline completed steps so a long synchronous producer cannot overflow the stack.
+        while (guard.getAsBoolean()) {
+            CompletionStage<AsyncEffect.Step> next = iterator.next();
+            CompletableFuture<AsyncEffect.Step> future = next.toCompletableFuture();
+            if (!future.isDone()) return next.thenCompose(step -> root().atomic(() -> {
+                if (step != null && step.inverse() != null) sink.add(step.inverse());
+                return step == null || step.done() ? Stages.done() : collectAsync(iterator, sink, guard);
+            }));
+            AsyncEffect.Step step = future.join();
+            if (step != null && step.inverse() != null) sink.add(step.inverse());
+            if (step == null || step.done()) return Stages.done();
+        }
+        return Stages.done();
+    }
+
+    private CompletionStage<Void> unwind(List<? extends Disposable> inverses) {
+        List<Disposable> copy = new ArrayList<>(inverses);
+        inverses.clear();
+        CompletionStage<Void> task = Stages.done();
+        List<Throwable> errors = new ArrayList<>();
+        for (int i = copy.size() - 1; i >= 0; i--) {
+            Disposable disposable = copy.get(i);
+            task = task.thenCompose(v -> root().atomic(() -> Stages.dispose(disposable)))
+                    .handle((v, e) -> {
+                        if (e != null) errors.add(Stages.cause(e));
+                        return null;
+                    });
+        }
+        return task.thenCompose(v -> {
+            if (errors.isEmpty()) return Stages.done();
+            Throwable first = errors.getFirst();
+            errors.stream().skip(1).filter(e -> e != first).forEach(first::addSuppressed);
+            return CompletableFuture.failedFuture(first);
+        });
+    }
+
     public List<EffectMeta> getEffects() {
-        List<EffectMeta> out = new ArrayList<>();
-        for (EffectRecord record : records) out.add(record.meta);
-        return out;
+        return root().atomic(() -> records.stream().map(record -> record.meta).toList());
     }
 
-    // ------------------------------------------------------- dependency tracking
-
-    /** 重新核对一个声明的依赖:提供者还 ACTIVE 且检查通过,才记入待用表。 */
     public void checkImpl(String name) {
-        Impl impl = ctx.getRoot().reflect().getImpl(ctx, name, true);
-        if (impl == null) {
-            pendingStore.remove(name);
-            return;
-        }
-        if (impl.check != null) {
-            boolean ok;
+        root().atomic(() -> {
+            Impl impl = ctx.reflect().getImpl(ctx, name, true);
             try {
-                ok = impl.check.test(impl.value);
-            } catch (Throwable t) {
-                impl.fiber.ctx.logger("cordis").error(t);
+                Object candidate = impl == null ? null : impl.value instanceof ContextualService<?> service ? service.inContext(ctx) : impl.value;
+                if (impl == null || (impl.check != null && !impl.check.test(candidate))) pendingStore.remove(name);
+                else pendingStore.put(name, impl);
+            } catch (Throwable e) {
+                ctx.logger("cordis").error(e);
                 pendingStore.remove(name);
-                return;
             }
-            if (!ok) {
-                pendingStore.remove(name);
-                return;
-            }
-        }
-        pendingStore.put(name, impl);
-    }
-
-    /** 重算目标视图(依赖齐不齐、各由谁提供);目标变了就触发加载或卸载。 */
-    public void refresh() {
-        StringBuilder digest = new StringBuilder();
-        for (String name : inject.keySet()) {
-            Impl impl = pendingStore.get(name);
-            if (impl == null) {
-                target = INACTIVE;
-                setEpoch(INACTIVE);
-                return;
-            }
-            digest.append(':').append(impl.fiber.uid);
-        }
-        target = digest.toString();
-        setEpoch(digest.toString());
-    }
-
-    private void setEpoch(String newEpoch) {
-        String old = epoch;
-        if (Objects.equals(newEpoch, old)) return;
-        epoch = newEpoch;
-        if (inertia != null) return; // 进行中的转换结束后会重新检查并链入下一个转换
-        if (!INACTIVE.equals(newEpoch) && INACTIVE.equals(old)) {
-            updateState(FiberState.LOADING);
-            inertia = this::reloadCycle;
-        } else {
-            updateState(FiberState.UNLOADING);
-            inertia = this::unloadCycle;
-        }
-        runChain();
-    }
-
-    /** 把链式转换一口气跑完,直到 fiber 稳定下来(惰性语义)。 */
-    private void runChain() {
-        while (inertia != null) {
-            Runnable task = inertia;
-            inertia = null;
-            task.run();
-        }
-    }
-
-    /** 加载:提交解析好的依赖快照、解析配置、执行插件主体,然后稳定或链入下一个转换(算法 5 的 reload)。 */
-    private void reloadCycle() {
-        store = new LinkedHashMap<>(pendingStore);
-        String oldEpoch = epoch;
-        String target0 = target;
-        try {
-            if (Objects.equals(epoch, oldEpoch)) {
-                config = resolveConfig(rawConfig);
-                EffectMeta bodyMeta = new EffectMeta(name() + ".apply");
-                metaStack.push(bodyMeta);
-                try {
-                    Object result = plugin.apply(ctx, config);
-                    List<Disposable> local = new ArrayList<>();
-                    collectResult(result, local, () -> Objects.equals(target, target0));
-                    for (Disposable d : local) records.add(new EffectRecord(d, bodyMeta));
-                } finally {
-                    metaStack.pop();
-                }
-                error = null;
-            }
-        } catch (Throwable t) {
-            ctx.logger(name()).error(t);
-            error = t;
-            epoch = INACTIVE;
-        }
-        if (Objects.equals(epoch, oldEpoch)) {
-            updateState(null);
-            inertia = null;
-        } else {
-            updateState(FiberState.UNLOADING);
-            inertia = this::unloadCycle;
-        }
-    }
-
-    /** 卸载:按后进先出执行全部撤销动作,然后稳定或链入下一个转换(算法 5 的 unload)。 */
-    private void unloadCycle() {
-        // 依赖方已经先走完:ACTIVE→UNLOADING 的状态变化通知了它们,
-        // 它们的卸载链已同步执行完毕(L-Unload 的保证顺序:消费者先于提供者完成撤销;
-        // TS 版是在这里 await 被通知的依赖方)。
-        List<EffectRecord> pending = new ArrayList<>(records);
-        records.clear();
-        for (int i = pending.size() - 1; i >= 0; i--) {
-            try {
-                pending.get(i).disposable.dispose();
-            } catch (Throwable t) {
-                ctx.logger(name()).error(t);
-            }
-        }
-        store = null;
-        if (INACTIVE.equals(epoch)) {
-            updateState(null);
-            inertia = null;
-        } else {
-            updateState(FiberState.LOADING);
-            inertia = this::reloadCycle;
-        }
-    }
-
-    private FiberState computeState() {
-        if (uid == null) return FiberState.DISPOSED;
-        if (error != null) return FiberState.FAILED;
-        return INACTIVE.equals(epoch) ? FiberState.PENDING : FiberState.ACTIVE;
-    }
-
-    private void updateState(FiberState override) {
-        FiberState old = state;
-        FiberState next = override != null ? override : computeState();
-        state = next;
-        if (old == next) return;
-        ctx.getRoot().events().emit(null, "internal/status", this, old);
-        // 只有 ACTIVE 与非 ACTIVE 之间的变化才通知依赖方
-        if ((old == FiberState.ACTIVE) == (next == FiberState.ACTIVE)) return;
-        List<String> names = new ArrayList<>();
-        for (Impl impl : ctx.getRoot().reflect().bindingsOf(this)) {
-            names.add(impl.name);
-        }
-        if (!names.isEmpty()) ctx.getRoot().reflect().notify(ctx, names);
-    }
-
-    // ------------------------------------------------------------------ config
-
-    Object resolveConfig(Object raw) {
-        Object cfg = ctx.getRoot().events().waterfall(null, "internal/config", raw, (Supplier<Object>) () -> raw);
-        ConfigSchema<?> schema = runtime != null ? plugin.schema() : null;
-        if (schema != null) {
-            @SuppressWarnings("unchecked")
-            ConfigSchema<Object> typed = (ConfigSchema<Object>) schema;
-            return typed.validate(cfg);
-        }
-        return cfg;
-    }
-
-    /** 原始配置,下次激活时使用。 */
-    public Object getRawConfig() {
-        return rawConfig;
-    }
-
-    /** 当前生效的配置。 */
-    public Object getEffectiveConfig() {
-        return config;
-    }
-
-    // ------------------------------------------------------------------ public ops
-
-    /**
-     * 等生命周期稳定;若处于 FAILED(启动出错)就把错误抛出来。
-     */
-    public Fiber await() {
-        if (error != null) {
-            throw error instanceof RuntimeException re ? re : new RuntimeException(error);
-        }
-        return this;
-    }
-
-    /** 用当前配置把插件卸了马上重装一遍。 */
-    public Fiber restart() {
-        assertActive();
-        setEpoch(INACTIVE);
-        refresh();
-        return await();
-    }
-
-    /**
-     * 换新配置:先校验(不合法直接抛错,保持旧配置继续运行),通过后重启插件。
-     */
-    public void update(Object newConfig) {
-        assertActive();
-        this.rawConfig = newConfig;
-        if (state != FiberState.ACTIVE) {
-            // 配置解析可能要访问注入的服务:推迟到激活时再执行。
-            error = null;
-            setEpoch(INACTIVE);
-            refresh();
-            return;
-        }
-        Object cfg = resolveConfig(newConfig);
-        ctx.getRoot().events().waterfall(null, "internal/update", cfg, Boolean.FALSE, (Supplier<Object>) () -> {
-            this.config = cfg;
-            this.error = null;
-            restart();
             return null;
         });
     }
 
-    /** 退役:卸载插件并从注册表移除;挂在父 fiber 上,父卸载时会被连带卸载。 */
-    public void dispose() {
-        if (retireHandle != null) {
-            retireHandle.dispose();
-        } else {
-            // root fiber: dispose the whole application
-            ctx.getRoot().registry().deleteAll();
+    public void refresh() {
+        root().atomic(() -> {
+            StringBuilder digest = new StringBuilder().append(revision);
+            for (String name : inject.keySet()) {
+                Impl impl = pendingStore.get(name);
+                if (impl == null) {
+                    digest = null;
+                    break;
+                }
+                digest.append(':').append(impl.uid);
+            }
+            target = uid == null || digest == null ? INACTIVE : digest.toString();
+            if (error == null && !Objects.equals(epoch, target)) {
+                epoch = target;
+                drive();
+            }
+            return null;
+        });
+    }
+
+    private void drive() {
+        if (running) return;
+        if (!loaded && (INACTIVE.equals(epoch) || uid == null) && records.isEmpty()) {
+            setState(resting());
+            return;
+        }
+        running = true;
+        stable = new CompletableFuture<>();
+        if (loaded || !records.isEmpty()) unload();
+        else load();
+    }
+
+    private void load() {
+        if (uid == null || INACTIVE.equals(epoch)) {
+            finish();
+            return;
+        }
+        loaded = true;
+        if (runtime == null) {
+            store = new LinkedHashMap<>();
+            finish();
+            return;
+        }
+        String startEpoch = epoch;
+        store = new LinkedHashMap<>(pendingStore);
+        for (Impl impl : store.values())
+            if (impl.fiber != this) {
+                impl.retain(this);
+                retained.add(impl);
+            }
+        setState(FiberState.LOADING);
+        // The apply return value is tracked by the same owner-visible runner as ctx.effect.
+        EffectRecord body = new EffectRecord(name() + ".apply");
+        records.add(body);
+        metaStack.push(body.meta);
+        CompletionStage<Void> execution;
+        try {
+            config = resolveConfig(rawConfig);
+            execution = collect(plugin.apply(ctx, config), body.inverses, () -> uid != null && Objects.equals(epoch, startEpoch));
+        } catch (Throwable e) {
+            execution = CompletableFuture.failedFuture(e);
+        } finally {
+            metaStack.pop();
+        }
+        execution.whenComplete((v, failure) -> root().atomic(() -> {
+            if (records.remove(body)) records.add(body);
+            if (failure == null) body.setup.complete(null);
+            else body.setup.completeExceptionally(Stages.cause(failure));
+            // Explicit effects may still be setting up after apply returns.
+            CompletableFuture<?>[] setups = records.stream().map(record -> record.setup).toArray(CompletableFuture[]::new);
+            CompletableFuture.allOf(setups).whenComplete((ignored, setupError) -> root().atomic(() -> {
+                if (setupError != null && Objects.equals(epoch, startEpoch) && uid != null) {
+                    error = Stages.cause(setupError);
+                    epoch = INACTIVE;
+                    ctx.logger(name()).error(error);
+                }
+                if (uid != null && Objects.equals(epoch, startEpoch)) {
+                    finish();
+                } else unload();
+                return null;
+            }));
+            return null;
+        }));
+    }
+
+    private void unload() {
+        setState(FiberState.UNLOADING); // publish departure before waiting or invoking any inverse
+        CompletableFuture<?>[] dependents = provisions.stream().map(Impl::drained)
+                .map(CompletionStage::toCompletableFuture).toArray(CompletableFuture[]::new);
+        CompletableFuture.allOf(dependents).thenCompose(v -> root().atomic(() -> unwind(records)))
+                .whenComplete((v, failure) -> root().atomic(() -> {
+                    if (failure != null) ctx.logger(name()).error(Stages.cause(failure));
+                    retained.forEach(impl -> impl.release(this));
+                    retained.clear();
+                    store = null;
+                    loaded = false;
+                    attachments.clear();
+                    if (uid != null && !INACTIVE.equals(epoch) && error == null) load();
+                    else finish();
+                    return null;
+                }));
+    }
+
+    private FiberState resting() {
+        if (uid == null) return FiberState.DISPOSED;
+        if (error != null) return FiberState.FAILED;
+        return loaded ? FiberState.ACTIVE : FiberState.PENDING;
+    }
+
+    private void finish() {
+        CompletableFuture<Void> completed = stable;
+        running = false;
+        setState(resting());
+        completed.complete(null);
+    }
+
+    private void setState(FiberState next) {
+        FiberState old = state;
+        state = next;
+        if (old == next) return;
+        ctx.events().emit(null, "internal/status", this, old);
+        if ((old == FiberState.ACTIVE) != (next == FiberState.ACTIVE)) {
+            for (Impl impl : List.copyOf(provisions)) ctx.reflect().notify(impl.context, List.of(impl.name));
         }
     }
 
-    /** 由本运行实例(fiber)提供服务;“注销绑定”也做成撤销动作,卸载时自动生效。 */
-    Disposable provide(Context from, String name, Object value, Predicate<Object> check) {
-        ReflectService reflect = ctx.getRoot().reflect();
-        return effect(cb -> {
-            reflect.globalRealm(name); // 确保该服务名有默认共享域,供全局解析使用
-            RealmKey key = from.resolveRealm(name);
-            Impl existing = reflect.bindingAt(key);
-            if (existing != null) {
-                throw new CordisException(CordisException.Code.DUPLICATE_PROVIDE,
-                        "service \"" + name + "\" has been registered at <" + existing.fiber.name() + ">");
+    Object resolveConfig(Object raw) {
+        Object value = ctx.events().waterfall(ctx, "internal/config", raw, (Supplier<Object>) () -> raw);
+        if (plugin != null && plugin.schema() != null) return plugin.schema().validate(value);
+        return value;
+    }
+
+    public Object getRawConfig() {
+        return rawConfig;
+    }
+
+    public Object getEffectiveConfig() {
+        return config;
+    }
+
+    public CompletionStage<Fiber> awaitAsync() {
+        return root().atomic(() -> {
+            CompletableFuture<Void> observedUpdate = updateBarrier;
+            return CompletableFuture.allOf(stable, observedUpdate).thenCompose(v -> root().atomic(() -> {
+                if (running || observedUpdate != updateBarrier) return awaitAsync();
+                return error == null ? CompletableFuture.completedFuture(this) : CompletableFuture.failedFuture(error);
+            }));
+        });
+    }
+
+    public Fiber await() {
+        if (root().inRuntime() && running)
+            throw new IllegalStateException("Use awaitAsync inside a lifecycle callback");
+        Stages.join(awaitAsync());
+        return this;
+    }
+
+    public Fiber restart() {
+        root().atomic(() -> {
+            assertActive();
+            error = null;
+            revision++;
+            refresh();
+            return null;
+        });
+        if (!root().inRuntime()) await();
+        return this;
+    }
+
+    public void update(Object newConfig) {
+        root().atomic(() -> {
+            assertActive();
+            rawConfig = newConfig;
+            Object candidate = state == FiberState.ACTIVE ? resolveConfig(newConfig) : newConfig;
+            Object updateResult = ctx.events().waterfall(ctx, "internal/update", candidate, Boolean.FALSE, (Supplier<Object>) () -> {
+                rawConfig = newConfig;
+                config = candidate;
+                error = null;
+                revision++;
+                refresh();
+                ctx.events().emit(ctx, "internal/config-updated", this, newConfig);
+                return null;
+            });
+            updateBarrier = updateResult instanceof CompletionStage<?> task ? task.thenApply(v -> (Void) null).toCompletableFuture() : Stages.done();
+            return null;
+        });
+        if (!root().inRuntime()) await();
+    }
+
+    public CompletionStage<Fiber> updateAsync(Object value) {
+        try {
+            return root().atomic(() -> {
+                update(value);
+                return awaitAsync();
+            });
+        } catch (Throwable error) {
+            return CompletableFuture.failedFuture(error);
+        }
+    }
+
+    public CompletionStage<Fiber> restartAsync() {
+        try {
+            return root().atomic(() -> {
+                restart();
+                return awaitAsync();
+            });
+        } catch (Throwable error) {
+            return CompletableFuture.failedFuture(error);
+        }
+    }
+
+    private CompletionStage<Void> retire() {
+        return root().atomic(() -> {
+            if (retirement != null) return retirement;
+            CompletableFuture<Void> result = new CompletableFuture<>();
+            retirement = result;
+            uid = null;
+            target = epoch = INACTIVE;
+            ctx.events().emit(null, "internal/plugin", this);
+            drive();
+            stable.whenComplete((v, e) -> root().atomic(() -> {
+                if (runtime != null) {
+                    runtime.fibers.remove(this);
+                    if (runtime.fibers.isEmpty()) ctx.registry().removeRuntime(runtime);
+                }
+                result.complete(null);
+                return null;
+            }));
+            return result;
+        });
+    }
+
+    /**
+     * Transfer the structural inverse without disposing it when a managed entry moves.
+     */
+    public void transferOwnership(Fiber nextOwner) {
+        root().atomic(() -> {
+            assertActive();
+            nextOwner.assertActive();
+            if (nextOwner.root() != root()) throw new IllegalArgumentException("Different application roots");
+            if (!(retireHandle instanceof Fiber.EffectRecord record))
+                throw new IllegalStateException("Root has no structural owner");
+            if (record.owner != nextOwner) {
+                record.owner.records.remove(record);
+                nextOwner.records.add(record);
+                record.owner = nextOwner;
             }
-            Impl impl = new Impl(name, this, value, check);
+            return null;
+        });
+    }
+
+    public CompletionStage<Void> disposeAsync() {
+        if (retireHandle instanceof AsyncDisposable async) return async.disposeAsync();
+        return retire();
+    }
+
+    public void dispose() {
+        boolean nested = root().inRuntime();
+        CompletionStage<Void> task = disposeAsync();
+        if (!nested) Stages.join(task);
+    }
+
+    public Set<Impl> provisions() {
+        return root().atomic(() -> Set.copyOf(provisions));
+    }
+
+    Disposable provide(Context from, String name, Object value, Predicate<Object> check) {
+        return effect(c -> {
+            ReflectService reflect = ctx.reflect();
+            RealmKey key = from.resolveRealm(name);
+            if (reflect.bindingAt(key) != null || reflect.accessor(name) != null)
+                throw new CordisException(CordisException.Code.DUPLICATE_PROVIDE, "duplicate service: " + name);
+            Impl impl = new Impl(name, this, from, key, value, check);
+            provisions.add(impl);
             reflect.bind(key, impl);
             if (store != null) store.put(name, impl);
             if (state == FiberState.ACTIVE) reflect.notify(from, List.of(name));
-            return (Disposable) () -> {
-                reflect.unbind(key);
+            return (AsyncDisposable) () -> root().atomic(() -> {
+                impl.withdrawn = true;
                 reflect.notify(from, List.of(name));
-                if (store != null) store.remove(name);
-            };
+                return impl.drained().thenRun(() -> root().atomic(() -> {
+                    if (reflect.bindingAt(impl.realm) == impl) reflect.unbind(impl.realm);
+                    provisions.remove(impl);
+                    if (store != null && store.get(name) == impl) store.remove(name);
+                    reflect.notify(from, List.of(name));
+                    return null;
+                }));
+            });
         }, "ctx.provide(\"" + name + "\")");
     }
 

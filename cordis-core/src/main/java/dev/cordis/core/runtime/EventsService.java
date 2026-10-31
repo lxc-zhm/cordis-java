@@ -19,16 +19,21 @@ import java.util.function.Supplier;
  */
 public final class EventsService {
 
-    /** 监听器回调;瀑布派发(waterfall)时,参数数组的最后一个元素是“下一步”回调。 */
+    /**
+     * 监听器回调;瀑布派发(waterfall)时,参数数组的最后一个元素是“下一步”回调。
+     */
     @FunctionalInterface
     public interface Listener {
         Object invoke(Object... args);
     }
 
-    /** 一条监听器登记:注册所在的上下文 + 回调。 */
+    /**
+     * 一条监听器登记:注册所在的上下文 + 回调。
+     */
     static final class Hook {
         final Context ctx;
         final Listener listener;
+        boolean global;
 
         Hook(Context ctx, Listener listener) {
             this.ctx = ctx;
@@ -51,38 +56,70 @@ public final class EventsService {
     public Disposable on(Context ctx, String name, Listener listener, boolean prepend) {
         ctx.fiber().assertActive();
         Hook hook = new Hook(ctx, listener);
-        List<Hook> list = hooks.computeIfAbsent(name, k -> new ArrayList<>());
         return ctx.fiber().effect(cb -> {
+            List<Hook> list = hooks.computeIfAbsent(name, k -> new ArrayList<>());
             if (prepend) list.add(0, hook);
             else list.add(hook);
             return (Disposable) () -> list.remove(hook);
         }, "ctx.on(\"" + name + "\")");
     }
 
+    public Disposable onGlobal(Context owner, String name, Listener listener) {
+        Hook hook = new Hook(owner, listener);
+        hook.global = true;
+        return owner.effect(c -> {
+            hooks.computeIfAbsent(name, k -> new ArrayList<>()).add(hook);
+            return (Disposable) () -> hooks.get(name).remove(hook);
+        }, "ctx.onGlobal(" + name + ")");
+    }
+
+    public Disposable once(Context owner, String name, Listener listener) {
+        Disposable[] handle = new Disposable[1];
+        handle[0] = on(owner, name, args -> {
+            handle[0].dispose();
+            return listener.invoke(args);
+        }, false);
+        return handle[0];
+    }
+
     List<Listener> dispatch(Context thisArg, String name) {
+        return root.atomic(() -> dispatchLocked(thisArg, name));
+    }
+
+    private List<Listener> dispatchLocked(Context thisArg, String name) {
         List<Hook> list = hooks.get(name);
         if (list == null || list.isEmpty()) return List.of();
         List<Listener> out = new ArrayList<>();
         for (Hook hook : List.copyOf(list)) {
+            if ((name.equals("internal/update") || name.equals("internal/config")) && thisArg != null
+                    && hook.ctx.fiber().runtime != null && hook.ctx.fiber() != thisArg.fiber()) continue;
             if (accepts(hook, thisArg)) out.add(hook.listener);
         }
         return out;
     }
 
-    /** 冒泡规则:监听器注册的上下文,是派发上下文本身或其祖先时才接收。 */
+    /**
+     * 冒泡规则:监听器注册的上下文,是派发上下文本身或其祖先时才接收。
+     */
     private static boolean accepts(Hook hook, Context dispatchCtx) {
-        if (dispatchCtx == null) return true;
+        if (dispatchCtx == null || hook.global) return true;
         for (Context c = dispatchCtx; c != null; c = c.getParent()) {
             if (c == hook.ctx) return true;
         }
         return false;
     }
 
-    /** 顺序派发:逐个调用监听器,不关心返回值;监听器抛异常只记日志,不打断别人。 */
+    /**
+     * 顺序派发:逐个调用监听器,不关心返回值;监听器抛异常只记日志,不打断别人。
+     */
     public void emit(Context thisArg, String name, Object... args) {
         for (Listener listener : dispatch(thisArg, name)) {
             try {
-                listener.invoke(args);
+                Object result = listener.invoke(args);
+                if (result instanceof java.util.concurrent.CompletionStage<?> stage)
+                    stage.whenComplete((v, error) -> {
+                        if (error != null) root.logger("cordis").error(error);
+                    });
             } catch (Throwable t) {
                 root.logger("cordis").error(t);
             }
@@ -90,29 +127,57 @@ public final class EventsService {
     }
 
     /**
-     * 并行派发(本实现为同步模拟):所有监听器都会执行完,有人抛错不打断别人,
+     * 并行派发的阻塞包装:发起全部监听器并等待它们的异步结果,有人抛错不打断别人,
      * 最后把第一个错误抛出去——对应 TS 版“并行跑完、任一失败即失败”的语义。
      */
     public void parallel(Context thisArg, String name, Object... args) {
-        Throwable first = null;
-        for (Listener listener : dispatch(thisArg, name)) {
-            try {
-                listener.invoke(args);
-            } catch (Throwable t) {
-                if (first == null) first = t;
-            }
-        }
-        if (first instanceof RuntimeException re) throw re;
-        if (first instanceof Error e) throw e;
-        if (first != null) throw new RuntimeException(first);
+        dev.cordis.core.effect.Stages.join(parallelAsync(thisArg, name, args));
     }
 
-    /** 判断监听器返回值是否表示“到此为止”。 */
+    /**
+     * Start every listener before awaiting completion; wait for all even if one fails.
+     */
+    public java.util.concurrent.CompletionStage<Void> parallelAsync(Context from, String name, Object... args) {
+        List<java.util.concurrent.CompletableFuture<?>> tasks = new ArrayList<>();
+        for (Listener listener : dispatch(from, name)) {
+            try {
+                Object result = listener.invoke(args);
+                tasks.add(result instanceof java.util.concurrent.CompletionStage<?> stage
+                        ? stage.toCompletableFuture() : java.util.concurrent.CompletableFuture.completedFuture(result));
+            } catch (Throwable error) {
+                tasks.add(java.util.concurrent.CompletableFuture.failedFuture(error));
+            }
+        }
+        return java.util.concurrent.CompletableFuture.allOf(tasks.toArray(java.util.concurrent.CompletableFuture[]::new));
+    }
+
+    public java.util.concurrent.CompletionStage<Object> serialAsync(Context from, String name, Object... args) {
+        java.util.concurrent.CompletionStage<Object> task = java.util.concurrent.CompletableFuture.completedFuture(null);
+        for (Listener listener : dispatch(from, name))
+            task = task.thenCompose(previous -> {
+                if (isBailed(previous)) return java.util.concurrent.CompletableFuture.completedFuture(previous);
+                try {
+                    Object result = listener.invoke(args);
+                    if (result instanceof java.util.concurrent.CompletionStage<?> stage)
+                        return stage.thenApply(value -> (Object) value);
+                    return java.util.concurrent.CompletableFuture.completedFuture(result);
+                } catch (Throwable error) {
+                    return java.util.concurrent.CompletableFuture.failedFuture(error);
+                }
+            });
+        return task;
+    }
+
+    /**
+     * 判断监听器返回值是否表示“到此为止”。
+     */
     static boolean isBailed(Object value) {
         return value != null && !Boolean.FALSE.equals(value);
     }
 
-    /** 短路派发:依次调用监听器,遇到一个“到此为止”的返回值就停;返回该值或 null。 */
+    /**
+     * 短路派发:依次调用监听器,遇到一个“到此为止”的返回值就停;返回该值或 null。
+     */
     public Object bail(Context thisArg, String name, Object... args) {
         for (Listener listener : dispatch(thisArg, name)) {
             Object result = listener.invoke(args);

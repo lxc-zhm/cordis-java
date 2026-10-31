@@ -22,16 +22,42 @@ public final class ReflectService {
 
     final Context root;
 
-    /** 每个服务名的默认隔离域,第一次 provide 时创建。 */
+    /**
+     * 每个服务名的默认隔离域,第一次 provide 时创建。
+     */
     final Map<String, RealmKey> globalRealms = new LinkedHashMap<>();
-    /** 服务绑定表:key 是隔离域,value 是绑定。 */
+    /**
+     * 服务绑定表:key 是隔离域,value 是绑定。
+     */
     final Map<RealmKey, Impl> store = new LinkedHashMap<>();
+    private final Map<String, Accessor> accessors = new LinkedHashMap<>();
+
+    /** Computed context properties; service forwarding must resolve through the caller. */
+    public record Accessor(java.util.function.Function<Context, Object> read,
+                           java.util.function.BiConsumer<Context, Object> write) { }
+
+    public Accessor accessor(String name) { return accessors.get(name); }
+
+    public dev.cordis.core.effect.Disposable accessor(Context owner, String name,
+            java.util.function.Function<Context, Object> read,
+            java.util.function.BiConsumer<Context, Object> write) {
+        java.util.Objects.requireNonNull(read);
+        return owner.effect(ctx -> {
+            if (accessors.containsKey(name) || store.values().stream().anyMatch(impl -> impl.name.equals(name)))
+                throw new dev.cordis.core.CordisException(dev.cordis.core.CordisException.Code.DUPLICATE_PROVIDE, "Property already declared: " + name);
+            Accessor property = new Accessor(read, write);
+            accessors.put(name, property);
+            return (dev.cordis.core.effect.Disposable) () -> accessors.remove(name, property);
+        }, "accessor(" + name + ")");
+    }
 
     public ReflectService(Context root) {
         this.root = root;
     }
 
-    /** 取某服务名的默认共享域,没有就创建。 */
+    /**
+     * 取某服务名的默认共享域,没有就创建。
+     */
     public RealmKey globalRealm(String name) {
         return globalRealms.computeIfAbsent(name, RealmKey::fresh);
     }
@@ -46,26 +72,34 @@ public final class ReflectService {
         RealmKey key = from.resolveRealm(name);
         Impl impl = store.get(key);
         if (impl == null) return null;
-        if (strict && impl.fiber.state != FiberState.ACTIVE) return null;
+        if (strict && (impl.withdrawn || impl.fiber.state != FiberState.ACTIVE)) return null;
         return impl;
     }
 
-    /** 读取某隔离域上的一条绑定;没有返回 null。 */
+    /**
+     * 读取某隔离域上的一条绑定;没有返回 null。
+     */
     public Impl bindingAt(RealmKey key) {
         return store.get(key);
     }
 
-    /** 写入(或覆盖)一条绑定。 */
+    /**
+     * 写入(或覆盖)一条绑定。
+     */
     public void bind(RealmKey key, Impl impl) {
         store.put(key, impl);
     }
 
-    /** 注销一条绑定。 */
+    /**
+     * 注销一条绑定。
+     */
     public void unbind(RealmKey key) {
         store.remove(key);
     }
 
-    /** 列出某个 fiber 提供的所有绑定(供生命周期通知使用)。 */
+    /**
+     * 列出某个 fiber 提供的所有绑定(供生命周期通知使用)。
+     */
     public java.util.List<Impl> bindingsOf(Fiber fiber) {
         java.util.List<Impl> out = new java.util.ArrayList<>();
         for (Impl impl : store.values()) {
@@ -74,7 +108,9 @@ public final class ReflectService {
         return out;
     }
 
-    /** 默认通知范围:只通知与发起方在同一隔离域里解析该服务的 fiber。 */
+    /**
+     * 默认通知范围:只通知与发起方在同一隔离域里解析该服务的 fiber。
+     */
     static BiPredicate<Context, String> realmFilter(Context origin) {
         return (ctx, name) -> ctx.resolveRealm(name) == origin.resolveRealm(name);
     }
@@ -86,6 +122,10 @@ public final class ReflectService {
      * @return 被重新检查过的 fiber 列表
      */
     public List<Fiber> notify(Context origin, List<String> names) {
+        return root.atomic(() -> notifyInternal(origin, names));
+    }
+
+    private List<Fiber> notifyInternal(Context origin, List<String> names) {
         BiPredicate<Context, String> filter = realmFilter(origin);
         List<Fiber> fibers = new ArrayList<>();
         for (PluginRuntime runtime : List.copyOf(root.registry().runtimes())) {

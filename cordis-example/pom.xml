@@ -18,6 +18,12 @@
       <artifactId>cordis-core</artifactId>
       <version>1.0.0</version>
     </dependency>
+    <dependency>
+      <groupId>org.yaml</groupId><artifactId>snakeyaml</artifactId><version>2.5</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

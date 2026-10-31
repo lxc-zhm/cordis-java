@@ -12,17 +12,29 @@ import java.util.Map;
  */
 public final class Entry {
 
-    /** 稳定身份:调和时靠它区分“是改了,还是删了又加”。 */
+    /**
+     * 稳定身份:调和时靠它区分“是改了,还是删了又加”。
+     */
     public final String id;
-    /** 插件模块的地址(交给解析器解析)。 */
+    /**
+     * 插件模块的地址(交给解析器解析)。
+     */
     public final String url;
-    /** 隔离声明:服务名 → TRUE(独享域)或共享门牌(同名共用一个域)。 */
+    /**
+     * 隔离声明:服务名 → TRUE(独享域)或共享门牌(同名共用一个域)。
+     */
     public final Map<String, Object> isolate;
-    /** 拦截声明:服务名 → 追加给该服务的配置。 */
+    /**
+     * 拦截声明:服务名 → 追加给该服务的配置。
+     */
     public final Map<String, Object> intercept;
-    /** 传给插件的配置。 */
+    /**
+     * 传给插件的配置。
+     */
     public final Object config;
-    /** 是否被停用(条目保留,但不挂载)。 */
+    /**
+     * 是否被停用(条目保留,但不挂载)。
+     */
     public final boolean disabled;
 
     private Entry(Builder b) {
@@ -32,6 +44,21 @@ public final class Entry {
         this.intercept = Map.copyOf(b.intercept);
         this.config = b.config;
         this.disabled = b.disabled;
+    }
+
+    public Builder toBuilder() {
+        Builder builder = of(id, url).config(config).disabled(disabled);
+        builder.isolate.putAll(isolate);
+        builder.intercept.putAll(intercept);
+        return builder;
+    }
+
+    public Entry withConfig(Object value) {
+        return toBuilder().config(value).build();
+    }
+
+    public Entry withDisabled(boolean value) {
+        return toBuilder().disabled(value).build();
     }
 
     public static Builder of(String id, String url) {
@@ -56,7 +83,9 @@ public final class Entry {
             return this;
         }
 
-        /** 加入具名的共享域:写了相同门牌的条目共用同一个域。 */
+        /**
+         * 加入具名的共享域:写了相同门牌的条目共用同一个域。
+         */
         public Builder isolateShared(String name, Object label) {
             isolate.put(name, label);
             return this;

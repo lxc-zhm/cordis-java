@@ -11,6 +11,7 @@ import java.util.List;
  * <ul>
  *   <li>一个 {@link Disposable} —— 单阶段效应:返回“以后怎么撤销”;</li>
  *   <li>{@code null} —— 没有需要撤销的东西;</li>
+ *   <li>CompletionStage 或 AsyncEffect —— 异步阶段与异步迭代;</li>
  *   <li>一组 Disposable(Iterable)—— 多阶段效应:每产生一个就登记一个;
  *       阶段之间是“检查点”,运行实例的目标视图变了可以在这里停下,只回滚已完成的部分。</li>
  * </ul>
@@ -22,11 +23,13 @@ public interface EffectCallback {
      * 执行效应回调,返回“以后怎么撤销”。
      *
      * @param ctx 效应执行所在的上下文
-     * @return Disposable、Iterable&lt;Disposable&gt;,或 null
+     * @return Disposable、Iterable、CompletionStage、AsyncEffect,或 null
      */
     Object execute(Context ctx);
 
-    /** 把回调返回值整理成撤销动作列表,便于统一处理。 */
+    /**
+     * 只把同步返回值整理成撤销动作列表;异步返回值由 Fiber 的运行器处理。
+     */
     static List<Disposable> flatten(Object result) {
         if (result == null) return List.of();
         if (result instanceof Disposable d) return List.of(d);

@@ -9,7 +9,7 @@ package dev.cordis.core.coeffect;
  */
 public final class RealmKey {
 
-    private static final java.util.Map<Object, RealmKey> SHARED = new java.util.HashMap<>();
+    private static final java.util.Map<Object, java.lang.ref.WeakReference<RealmKey>> SHARED = new java.util.HashMap<>();
 
     private final String hint;
 
@@ -17,14 +17,32 @@ public final class RealmKey {
         this.hint = hint;
     }
 
-    /** 新建一个独享的隔离域。 */
+    /**
+     * 新建一个独享的隔离域。
+     */
     public static RealmKey fresh(String hint) {
         return new RealmKey(hint);
     }
 
-    /** 取(或创建)与 label 对应的共享域:相同的标签进入同一个域。 */
+    /**
+     * 取(或创建)与 label 对应的共享域:相同的标签进入同一个域。
+     */
     public static synchronized RealmKey shared(Object label) {
-        return SHARED.computeIfAbsent(label, l -> new RealmKey(String.valueOf(l)));
+        SHARED.values().removeIf(reference -> reference.get() == null);
+        var reference = SHARED.get(label);
+        RealmKey key = reference == null ? null : reference.get();
+        if (key == null) {
+            key = new RealmKey(String.valueOf(label));
+            SHARED.put(label, new java.lang.ref.WeakReference<>(key));
+        }
+        return key;
+    }
+
+    private record ScopedLabel(String name, Object label) {
+    }
+
+    public static RealmKey shared(String name, Object label) {
+        return shared(new ScopedLabel(name, label));
     }
 
     @Override

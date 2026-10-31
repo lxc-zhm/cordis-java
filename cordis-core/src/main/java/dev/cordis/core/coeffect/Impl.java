@@ -1,35 +1,57 @@
 package dev.cordis.core.coeffect;
 
-import dev.cordis.core.runtime.Fiber;
+import dev.cordis.core.runtime.*;
 
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 
 /**
- * 一条服务绑定:某服务名在某个隔离域里的具体实现。
- *
- * <p>绑定跟着提供者 fiber 走:fiber 处于 ACTIVE 时,同隔离域里的依赖方才能看到它;
- * fiber 一旦卸载,绑定随之消失,依赖方会被通知去找新的提供者。</p>
+ * A provision has its own identity, scope and retained dependent views.
  */
 public final class Impl {
-
-    /** 服务名。 */
+    private static final AtomicLong IDS = new AtomicLong();
+    public final long uid = IDS.incrementAndGet();
     public final String name;
-    /** 提供者 fiber,绑定的生死跟着它。 */
     public final Fiber fiber;
-    /** 当前的服务值,可用 ctx.set 更新。 */
-    public Object value;
-    /** 可选的“是否可用”检查:依赖方加载前会先问一次。 */
+    public final Context context;
+    public RealmKey realm;
+    public volatile Object value;
     public final Predicate<Object> check;
+    public boolean withdrawn;
+    private final Set<Fiber> dependents = new LinkedHashSet<>();
+    private CompletableFuture<Void> drain;
 
-    public Impl(String name, Fiber fiber, Object value, Predicate<Object> check) {
+    public Impl(String name, Fiber fiber, Context context, RealmKey realm, Object value, Predicate<Object> check) {
         this.name = name;
         this.fiber = fiber;
+        this.context = context;
+        this.realm = realm;
         this.value = value;
         this.check = check;
     }
 
+    public void retain(Fiber dependent) {
+        dependents.add(dependent);
+    }
+
+    public void release(Fiber dependent) {
+        dependents.remove(dependent);
+        if (dependents.isEmpty() && drain != null) {
+            drain.complete(null);
+            drain = null;
+        }
+    }
+
+    public CompletionStage<Void> drained() {
+        if (dependents.isEmpty()) return CompletableFuture.completedFuture(null);
+        if (drain == null) drain = new CompletableFuture<>();
+        return drain;
+    }
+
     @Override
     public String toString() {
-        return "Impl(" + name + ", fiber=" + fiber.name() + ")";
+        return "Impl(" + name + "#" + uid + ")";
     }
 }

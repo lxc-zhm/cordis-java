@@ -1,33 +1,22 @@
 package dev.cordis.loader;
 
-import dev.cordis.core.runtime.Context;
-import dev.cordis.core.runtime.Fiber;
-import dev.cordis.core.runtime.Logger;
-import dev.cordis.core.Plugin;
-import dev.cordis.core.coeffect.RealmKey;
+import dev.cordis.core.*;
+import dev.cordis.core.runtime.*;
+import dev.cordis.core.coeffect.*;
+import dev.cordis.core.effect.*;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.Consumer;
 
 /**
- * 组件加载器(声明式):用一列配置条目({@link Entry})描述“想要装什么”,
- * 它负责对着清单干活,清单变化时做增量调整(而不是全部推倒重来)。
- *
- * <p>调和(reconcile)按 id 差分:消失的卸载、新增的挂载、存活的按“哪个字段变了”选最小动作。
- * 为什么可以这么省事?框架保证:无论中途怎么装怎么卸,最终停下来时的状态
- * 和“从头按最终配置装一遍”完全一致(论文 Theorem 80)。</p>
+ * A keyed configuration tree. Metadata changes and lifecycle changes share the root serializer.
  */
-public final class ComponentLoader {
-
-    /** 一条已挂载记录:配置条目、运行实例(fiber)、插件、派生上下文。 */
+public final class ComponentLoader implements AutoCloseable {
     public static final class Mounted {
         public final Entry entry;
-        public final Fiber fiber;   // 停用或启动失败时为 null
-        public final Plugin plugin; // 停用时为 null
+        public final Fiber fiber;
+        public final Plugin plugin;
         public final Context ctx;
 
         Mounted(Entry entry, Fiber fiber, Plugin plugin, Context ctx) {
@@ -37,178 +26,394 @@ public final class ComponentLoader {
             this.ctx = ctx;
         }
 
-        Mounted with(Entry entry, Fiber fiber, Plugin plugin) {
-            return new Mounted(entry, fiber, plugin, this.ctx);
+        Mounted with(Entry value) {
+            return new Mounted(value, fiber, plugin, ctx);
         }
     }
 
     private final Context parent;
     private final PluginResolver resolver;
     private final Map<String, Mounted> mounted = new LinkedHashMap<>();
-    private final Logger log;
+    private final Map<String, Map<String, RealmKey>> privateRealms = new HashMap<>();
+    private Consumer<List<Entry>> onChange = entries -> {
+    };
+    private final Disposable ownership;
+    private final Disposable configHook;
+    private final Disposable pluginHook;
+    private CompletableFuture<Void> operationTail = Stages.done();
+    private boolean closed;
+    private boolean closing;
+    private boolean reconciling;
 
     public ComponentLoader(Context parent, PluginResolver resolver) {
         this.parent = parent;
         this.resolver = resolver;
-        this.log = parent.logger("loader");
+        configHook = parent.onGlobal("internal/config-updated", args -> {
+            Fiber fiber = (Fiber) args[0];
+            for (var m : List.copyOf(mounted.values()))
+                if (m.fiber == fiber) {
+                    mounted.put(m.entry.id, m.with(m.entry.withConfig(args[1])));
+                    changed();
+                    break;
+                }
+            return null;
+        });
+        pluginHook = parent.onGlobal("internal/plugin", args -> {
+            Fiber fiber = (Fiber) args[0];
+            if (fiber.uid == null && !closing && !reconciling) {
+                for (var m : List.copyOf(mounted.values()))
+                    if (m.fiber == fiber) {
+                        mounted.put(m.entry.id, new Mounted(m.entry.withDisabled(true), null, m.plugin, m.ctx));
+                        changed();
+                        break;
+                    }
+            }
+            return null;
+        });
+        ownership = parent.effect(c -> (AsyncDisposable) () -> {
+            closed = true;
+            return disposeAllAsync();
+        }, "loader ownership");
     }
 
-    /** 查某个 id 的已挂载记录,没有返回 null。 */
-    public synchronized Mounted mounted(String id) {
-        return mounted.get(id);
+    /**
+     * All currently instantiated configuration subtrees, in parent-first order.
+     */
+    public List<ComponentLoader> tree() {
+        return parent.atomic(() -> {
+            List<ComponentLoader> result = new ArrayList<>();
+            result.add(this);
+            for (Mounted m : mounted.values())
+                if (m.fiber != null && m.fiber.attachment("loader") instanceof ComponentLoader nested)
+                    result.addAll(nested.tree());
+            return List.copyOf(result);
+        });
     }
 
-    /** 所有已挂载的 id,按加载顺序排列。 */
-    public synchronized List<String> ids() {
-        return new ArrayList<>(mounted.keySet());
+    public Context context() {
+        return parent;
     }
 
-    /** 按整份配置装载(内部就是调和)。 */
-    public synchronized void load(List<Entry> desired) {
+    public Plugin resolve(String url) throws Exception {
+        return resolver.resolve(url);
+    }
+
+    public Mounted mounted(String id) {
+        return parent.atomic(() -> mounted.get(id));
+    }
+
+    public List<String> ids() {
+        return parent.atomic(() -> List.copyOf(mounted.keySet()));
+    }
+
+    public List<Entry> snapshot() {
+        return parent.atomic(() -> mounted.values().stream().map(m -> m.entry).toList());
+    }
+
+    public void onChange(Consumer<List<Entry>> listener) {
+        parent.atomic(() -> {
+            onChange = Objects.requireNonNull(listener);
+            return null;
+        });
+    }
+
+    private void changed() {
+        if (!closing && !reconciling) onChange.accept(snapshot());
+    }
+
+    /**
+     * One ordered orchestration queue per configuration subtree. Never hold the runtime lock while waiting.
+     */
+    private <T> CompletionStage<T> enqueue(java.util.function.Supplier<CompletionStage<T>> action) {
+        return parent.atomic(() -> {
+            CompletableFuture<T> result = new CompletableFuture<>();
+            CompletableFuture<Void> previous = operationTail;
+            CompletableFuture<Void> released = new CompletableFuture<>();
+            operationTail = released;
+            previous.handle((v, e) -> null).thenCompose(v -> parent.atomic(action)).whenComplete((value, error) -> parent.atomic(() -> {
+                released.complete(null);
+                if (error == null) result.complete(value);
+                else result.completeExceptionally(Stages.cause(error));
+                return null;
+            }));
+            return result;
+        });
+    }
+
+    public <T> T transaction(Callable<T> action) throws Exception {
+        if (parent.inRuntime())
+            throw new IllegalStateException("A blocking loader transaction cannot run inside a lifecycle callback");
+        synchronized (parent.getRoot()) {
+            return runTransaction(action);
+        }
+    }
+
+    private <T> T runTransaction(Callable<T> action) throws Exception {
+        CompletionStage<T> task = enqueue(() -> {
+            CompletableFuture<T> result = new CompletableFuture<>();
+            Thread.ofVirtual().name("cordis-loader-transaction").start(() -> {
+                try {
+                    result.complete(action.call());
+                } catch (Throwable error) {
+                    result.completeExceptionally(error);
+                }
+            });
+            return result;
+        });
+        try {
+            return task.toCompletableFuture().get();
+        } catch (ExecutionException error) {
+            Throwable cause = Stages.cause(error);
+            if (cause instanceof Exception exception) throw exception;
+            throw (Error) cause;
+        }
+    }
+
+    public final class Lease implements AutoCloseable {
+        private final CompletableFuture<Void> release;
+
+        private Lease(CompletableFuture<Void> release) {
+            this.release = release;
+        }
+
+        @Override
+        public void close() {
+            release.complete(null);
+        }
+    }
+
+    /**
+     * Acquire a subtree's orchestration queue for a multi-subtree transaction.
+     */
+    public CompletionStage<Lease> acquireOperations() {
+        CompletableFuture<Lease> acquired = new CompletableFuture<>();
+        enqueue(() -> {
+            CompletableFuture<Void> release = new CompletableFuture<>();
+            acquired.complete(new Lease(release));
+            return release;
+        });
+        return acquired;
+    }
+
+    public void load(List<Entry> desired) {
         reconcile(desired);
     }
 
-    /**
-     * 把运行中的系统调和成 desired 这份清单:被移除的卸载,存活的按字段更新,
-     * 新增的按顺序挂载。不用关心先后顺序——依赖没就绪的插件会自动待命等待。
-     */
-    public synchronized void reconcile(List<Entry> desired) {
-        Set<String> seen = new java.util.HashSet<>();
-        for (Entry e : desired) seen.add(e.id);
-        for (String id : new ArrayList<>(mounted.keySet())) {
-            if (!seen.contains(id)) unmount(id);
+    public void reconcile(List<Entry> desired) {
+        boolean nested = parent.inRuntime();
+        if (nested) {
+            reconcileAsync(desired);
+            return;
         }
-        for (Entry e : desired) {
-            apply(e);
+        synchronized (parent.getRoot()) {
+            Stages.join(reconcileAsync(desired));
         }
     }
 
-    private void apply(Entry e) {
-        Mounted m = mounted.get(e.id);
-        if (m == null) {
-            if (e.disabled) {
-                mounted.put(e.id, new Mounted(e, null, null, null));
-            } else {
-                mount(e, null);
-            }
-            return;
-        }
-        // 逐字段分发:按哪个字段变了,选最小扰动的动作
-        if (!Objects.equals(m.entry.url, e.url)) {
-            rebuild(e, null); // 身份/组件变了(换了模块)
-            return;
-        }
-        if (m.entry.disabled != e.disabled) {
-            if (e.disabled) {
-                log.info("disable " + e.id);
-                if (m.fiber != null) m.fiber.dispose();
-                mounted.put(e.id, new Mounted(e, null, null, m.ctx));
-            } else {
-                rebuild(e, null); // 重新启用:在同一个 id 下新建一个运行实例
-            }
-            return;
-        }
-        if (!Objects.equals(m.entry.isolate, e.isolate)) {
-            rebuild(e, m.plugin); // 隔离域重新指派(算法 7,由定理 80 保证)
-            return;
-        }
-        if (!Objects.equals(m.entry.intercept, e.intercept)) {
-            rebuild(e, m.plugin); // 拦截配置挂在派生上下文上,需要重建
-            return;
-        }
-        if (!Objects.equals(m.entry.config, e.config)) {
-            mounted.put(e.id, m.with(e, m.fiber, m.plugin));
-            if (m.fiber != null) {
-                log.info("update config of " + e.id);
-                try {
-                    m.fiber.update(e.config);
-                } catch (RuntimeException error) {
-                    // 配置不合法:该运行实例进入 FAILED,已挂载记录保留新配置
-                    log.error("entry " + e.id + " rejected new config: {}", error);
-                }
-            }
-        }
+    public CompletionStage<Void> reconcileAsync(List<Entry> desired) {
+        Set<String> unique = new HashSet<>();
+        for (Entry entry : desired)
+            if (entry.id == null || entry.id.isBlank() || entry.url == null || !unique.add(entry.id))
+                throw new IllegalArgumentException("Missing or duplicate entry id: " + entry.id);
+        return enqueue(() -> {
+            if (closed) throw new IllegalStateException("Loader is closed");
+            reconciling = true;
+            List<CompletableFuture<?>> removals = new ArrayList<>();
+            for (String id : new ArrayList<>(mounted.keySet()))
+                if (!unique.contains(id)) removals.add(removeAsync(id).toCompletableFuture());
+            CompletionStage<Void> task = CompletableFuture.allOf(removals.toArray(CompletableFuture[]::new)).thenCompose(v -> parent.atomic(() -> {
+                List<CompletableFuture<?>> updates = new ArrayList<>();
+                // Start all modules before awaiting any async apply; startup must not impose entry order.
+                for (Entry entry : desired) updates.add(applyAsync(entry).toCompletableFuture());
+                return CompletableFuture.allOf(updates.toArray(CompletableFuture[]::new));
+            }));
+            return task.whenComplete((v, e) -> parent.atomic(() -> {
+                reconciling = false;
+                return null;
+            }));
+        });
     }
 
-    private void mount(Entry e, Plugin forced) {
-        try {
-            Context ctx = derive(e);
-            Plugin plugin = forced != null ? forced : resolver.resolve(e.url);
-            Fiber fiber = ctx.plugin(plugin, e.config);
+    private CompletionStage<Void> removeAsync(String id) {
+        Mounted old = mounted.remove(id);
+        privateRealms.remove(id);
+        return old == null || old.fiber == null ? Stages.done() : old.fiber.disposeAsync();
+    }
+
+    private CompletionStage<Void> applyAsync(Entry entry) {
+        Mounted old = mounted.get(entry.id);
+        if (old == null || !Objects.equals(old.entry.url, entry.url) || old.entry.disabled != entry.disabled) {
+            return removeAsync(entry.id).thenRun(() -> parent.atomic(() -> {
+                        mount(entry, null);
+                        return null;
+                    }))
+                    .thenCompose(v -> settleEntry(entry.id));
+        }
+        if (entry.disabled) {
+            mounted.put(entry.id, old.with(entry));
+            return Stages.done();
+        }
+        if (old.fiber == null) {
+            mount(entry, null);
+            return settleEntry(entry.id);
+        }
+        if (!Objects.equals(old.entry.isolate, entry.isolate)) old.ctx.patchRealms(realms(entry));
+        if (!Objects.equals(old.entry.intercept, entry.intercept)) old.ctx.patchIntercept(entry.intercept);
+        mounted.put(entry.id, old.with(entry));
+        if (!Objects.equals(old.entry.config, entry.config)) {
             try {
-                fiber.await();
+                old.fiber.update(entry.config);
             } catch (RuntimeException error) {
-                log.error("entry " + e.id + " failed to start: {}", error);
+                parent.logger("loader").error(error);
             }
-            mounted.put(e.id, new Mounted(e, fiber, plugin, ctx));
-            log.info("mounted " + e.id + " (" + fiber.name() + " #" + fiber.uid + ")");
-        } catch (Exception error) {
-            log.error("entry " + e.id + " could not resolve " + e.url + ": {}", error);
-            mounted.put(e.id, new Mounted(e, null, null, null));
         }
+        return settleEntry(entry.id);
     }
 
-    private void rebuild(Entry e, Plugin forced) {
-        Mounted m = mounted.get(e.id);
-        if (m != null && m.fiber != null) {
-            log.info("rebuild " + e.id);
-            m.fiber.dispose();
+    private CompletionStage<Void> settleEntry(String id) {
+        Mounted m = mounted(id);
+        return m == null || m.fiber == null ? Stages.done() : m.fiber.awaitAsync().handle((f, e) -> null);
+    }
+
+    private Map<String, RealmKey> realms(Entry entry) {
+        Map<String, RealmKey> result = new LinkedHashMap<>();
+        entry.isolate.forEach((name, label) -> result.put(name, label instanceof RealmKey key ? key :
+                Boolean.TRUE.equals(label) ? privateRealms.computeIfAbsent(entry.id, k -> new HashMap<>())
+                        .computeIfAbsent(name, k -> RealmKey.fresh(name + "#" + entry.id)) : RealmKey.shared(name, label)));
+        return result;
+    }
+
+    private Context derive(Entry entry) {
+        Context context = parent.extend();
+        context.patchRealms(realms(entry));
+        context.patchIntercept(entry.intercept);
+        return context;
+    }
+
+    private void mount(Entry entry, Plugin forced) {
+        if (closed || parent.fiber().uid == null) return;
+        if (entry.disabled) {
+            mounted.put(entry.id, new Mounted(entry, null, null, null));
+            return;
         }
-        mount(e, forced);
+        Context context = derive(entry);
+        try {
+            Plugin plugin = forced != null ? forced : resolver.resolve(entry.url);
+            Fiber fiber = context.plugin(plugin, entry.config);
+            mounted.put(entry.id, new Mounted(entry, fiber, plugin, context));
+            fiber.awaitAsync().whenComplete((f, error) -> {
+                if (error != null) parent.logger("loader").error(Stages.cause(error));
+            });
+        } catch (Exception error) {
+            parent.logger("loader").error(error);
+            mounted.put(entry.id, new Mounted(entry, null, null, context));
+        }
     }
 
     private void unmount(String id) {
-        Mounted m = mounted.remove(id);
-        if (m != null && m.fiber != null) {
-            log.info("unmount " + id);
-            m.fiber.dispose();
-        }
-    }
-
-    /** 为 Entry 派生上下文:先套隔离域,再套拦截配置。 */
-    private Context derive(Entry e) {
-        Context ctx = parent;
-        for (Map.Entry<String, Object> i : e.isolate.entrySet()) {
-            RealmKey key;
-            if (i.getValue() instanceof RealmKey rk) {
-                key = rk;
-            } else if (Boolean.TRUE.equals(i.getValue())) {
-                key = RealmKey.fresh(i.getKey() + "#" + e.id); // 独享域跟随这条配置条目走
-            } else {
-                key = RealmKey.shared(i.getValue());
-            }
-            ctx = ctx.isolate(i.getKey(), key);
-        }
-        for (Map.Entry<String, Object> i : e.intercept.entrySet()) {
-            ctx = ctx.intercept(i.getKey(), i.getValue());
-        }
-        return ctx;
+        Mounted old = mounted.remove(id);
+        if (old != null && old.fiber != null) old.fiber.dispose();
+        privateRealms.remove(id);
     }
 
     /**
-     * 只换插件、不动配置:HMR 的入口(算法 10)。
-     * forced 为 null 时会重新走解析器,从而拿到“改过”的新代码。
-     *
-     * @return 新的 fiber
+     * Move a live entry between groups; its fiber, private realms and resources retain identity.
      */
-    public synchronized Fiber remount(String id, Plugin forced) throws Exception {
-        Mounted m = mounted.get(id);
-        if (m == null) throw new IllegalArgumentException("entry not mounted: " + id);
-        Entry e = m.entry;
-        if (m.fiber != null) m.fiber.dispose();
-        Plugin plugin = forced != null ? forced : resolver.resolve(e.url);
-        Context ctx = derive(e);
-        Fiber fiber = ctx.plugin(plugin, e.config);
-        fiber.await();
-        mounted.put(id, new Mounted(e, fiber, plugin, ctx));
-        log.info("hot-swapped " + id + " (" + fiber.name() + " #" + fiber.uid + ")");
-        return fiber;
+    public void move(String id, ComponentLoader destination) throws Exception {
+        if (destination == this) return;
+        if (parent.getRoot() != destination.parent.getRoot())
+            throw new IllegalArgumentException("Different application roots");
+        transaction(() -> {
+            try (Lease lease = destination.acquireOperations().toCompletableFuture().get()) {
+                parent.atomic(() -> {
+                    if (closed || destination.closed) throw new IllegalStateException("Loader is closed");
+                    Mounted current = mounted.get(id);
+                    if (current == null || destination.mounted.containsKey(id))
+                        throw new IllegalArgumentException("Missing or conflicting entry: " + id);
+                    Fiber oldOwner = parent.fiber();
+                    if (current.fiber != null) current.fiber.transferOwnership(destination.parent.fiber());
+                    try {
+                        if (current.ctx != null) current.ctx.reparent(destination.parent);
+                    } catch (RuntimeException error) {
+                        if (current.fiber != null) current.fiber.transferOwnership(oldOwner);
+                        throw error;
+                    }
+                    mounted.remove(id);
+                    destination.mounted.put(id, current);
+                    Map<String, RealmKey> realms = privateRealms.remove(id);
+                    if (realms != null) destination.privateRealms.put(id, realms);
+                    changed();
+                    destination.changed();
+                    return null;
+                });
+            }
+            return null;
+        });
     }
 
-    /** 卸载所有条目并清空加载器。 */
-    public synchronized void disposeAll() {
-        for (String id : new ArrayList<>(mounted.keySet())) {
-            unmount(id);
+    public void detachForReload(String id) {
+        Mounted old = parent.atomic(() -> {
+            Mounted value = mounted.get(id);
+            if (value != null) mounted.put(id, new Mounted(value.entry, null, value.plugin, value.ctx));
+            return value;
+        });
+        if (old != null && old.fiber != null) old.fiber.dispose();
+    }
+
+    /**
+     * The candidate is published before await, so failure cleanup can always find it.
+     */
+    public Fiber remount(String id, Plugin forced) throws Exception {
+        Mounted old = mounted(id);
+        if (old == null || old.entry.disabled) throw new IllegalArgumentException("Entry is not enabled: " + id);
+        Plugin plugin = forced != null ? forced : resolver.resolve(old.entry.url); // preflight before retiring old code
+        detachForReload(id);
+        Fiber candidate = parent.atomic(() -> {
+            Context context = old.ctx != null ? old.ctx : derive(old.entry);
+            Fiber fiber = context.plugin(plugin, old.entry.config);
+            mounted.put(id, new Mounted(old.entry, fiber, plugin, context));
+            return fiber;
+        });
+        try {
+            candidate.await();
+            return candidate;
+        } catch (Throwable error) {
+            detachForReload(id);
+            throw Stages.propagate(error);
         }
+    }
+
+    public CompletionStage<Void> awaitAllAsync() {
+        return parent.atomic(() -> CompletableFuture.allOf(mounted.values().stream().filter(m -> m.fiber != null)
+                .map(m -> m.fiber.awaitAsync().toCompletableFuture()).toArray(CompletableFuture[]::new)));
+    }
+
+    public CompletionStage<Void> disposeAllAsync() {
+        return parent.atomic(() -> {
+            closing = true;
+            List<Mounted> previous = List.copyOf(mounted.values());
+            mounted.clear();
+            privateRealms.clear();
+            CompletableFuture<?>[] tasks = previous.stream().filter(m -> m.fiber != null)
+                    .map(m -> m.fiber.disposeAsync().toCompletableFuture()).toArray(CompletableFuture[]::new);
+            return CompletableFuture.allOf(tasks).whenComplete((v, e) -> {
+                closing = false;
+            });
+        });
+    }
+
+    public void disposeAll() {
+        boolean nested = parent.inRuntime();
+        var task = disposeAllAsync();
+        if (!nested) Stages.join(task);
+    }
+
+    @Override
+    public void close() {
+        closed = true;
+        disposeAll();
+        ownership.dispose();
+        configHook.dispose();
+        pluginHook.dispose();
     }
 }

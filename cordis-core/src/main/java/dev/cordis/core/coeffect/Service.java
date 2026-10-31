@@ -2,32 +2,52 @@ package dev.cordis.core.coeffect;
 
 import dev.cordis.core.runtime.Context;
 
+import java.lang.reflect.*;
+import java.util.function.BiFunction;
+
 /**
- * 服务基类:想把自己的实例挂到 ctx 上的类继承它。
- *
- * <p>子类在构造方法里调 super(ctx, 名字),实例立刻注册为当前运行实例的一个效应;
- * 运行实例卸载时自动注销,不用手写清理代码。</p>
+ * A service owns shared state. Contextual views are explicit in Java (no class Proxy).
  */
 public abstract class Service {
-
-    /** 本服务注册所在的上下文。 */
     protected final Context ctx;
-    /** 本服务注册用的名字。 */
     public final String name;
 
     protected Service(Context ctx, String name) {
-        this.ctx = ctx;
-        this.name = name;
-        ctx.provide(name, this, value -> isAvailable());
+        this(ctx, name, true);
     }
 
-    /** “我是否可用”的检查:依赖方加载前会先问一次,默认可用。 */
+    /**
+     * Use register=false for a view backed by an already registered service.
+     */
+    protected Service(Context ctx, String name, boolean register) {
+        this.ctx = ctx;
+        this.name = name;
+        if (register) ctx.provide(name, this, value -> ((Service) value).isAvailable());
+    }
+
     protected boolean isAvailable() {
         return true;
     }
 
-    /** 读方上下文里合并后的拦截配置(例如 readOnly=true)。 */
     public Object interceptConfig() {
         return ctx.resolveIntercept(name);
+    }
+
+    /**
+     * Register a contextual interface without a handwritten view class.
+     */
+    public static <T> ContextualService<T> bind(Class<T> api, BiFunction<Context, MethodCall, Object> invoke) {
+        if (!api.isInterface()) throw new IllegalArgumentException("Service API must be an interface");
+        return context -> api.cast(Proxy.newProxyInstance(api.getClassLoader(), new Class<?>[]{api}, (self, method, args) -> {
+            if (method.getDeclaringClass() == Object.class) return switch (method.getName()) {
+                case "equals" -> self == args[0];
+                case "hashCode" -> System.identityHashCode(self);
+                default -> "ServiceView<" + api.getName() + ">";
+            };
+            return invoke.apply(context, new MethodCall(method, args == null ? new Object[0] : args));
+        }));
+    }
+
+    public record MethodCall(Method method, Object[] arguments) {
     }
 }

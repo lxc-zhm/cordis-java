@@ -1,178 +1,183 @@
 # cordis-java
 
-Java 25 实现的 **Cordis** —— 时空可组合性(spatiotemporal composability)元框架,对应论文
-*A Programming Paradigm for Spatiotemporal Composability*(Shi, Zhang, Cui;北大 & DeepSeek-AI)
-第 3–5 章的运行时模型,并以 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)
-仓库 vendor 的 `vendor/cordis`(cordis v4)源码为语义参照。
+Java 25 版 Cordis：可回退效应、响应式依赖、上下文隔离与拦截、组件生命周期、声明式配置树和源码热更新。
+以 *A Programming Paradigm for Spatiotemporal Composability* 第 3–5 章，以及
+[deepseek-harness 的 Cordis 实现](https://github.com/deepseek-ai/deepseek-harness/tree/ce7073d51254c26cd63b22a60835b8f948deb447/vendor/cordis) 为参照。
 
-## 两个维度
+这是 Java API 的实现，不提供 TypeScript 插件的二进制兼容。下面区分已实现行为和 JVM 上的适配边界。
 
-| 维度 | 论文机制 | 本实现 |
-|---|---|---|
-| 时间可组合性 | 可回退效应(revertible effects):每个上下文变换携带运行时持有的逆变换,累加器按 LIFO 恢复(§3.1) | `Disposable`(撤销动作/逆变换)+ `Fiber.effect`(Algorithm 1:`execute` 折叠逆变换,`armed` 自处置,父级组合) |
-| 空间可组合性 | 响应式余效应(reactive coeffects):每次上下文变化按组件规范分类为激活/去激活/中性(§3.2) | `inject` 依赖声明 + `ReflectService.notify` 变更广播 + `Fiber.refresh`(目标视图 = 提供者 uid 摘要) |
-| 统一 | 上下文范式:效应与余效应经同一上下文中介(§3.3) | `Context`:`effect/get/set/provide/isolate/intercept/plugin` |
+## 构建与运行
 
-## 术语对照表
-
-本项目的文档、注释与讲解统一使用下表的中文名;代码标识符保留英文。
-
-| 英文 | 中文名 | 一句话释义 |
-|---|---|---|
-| Plugin | 插件 | 组件的声明形式:inject 声明依赖,apply 是主体 |
-| Context | 上下文 | 组件与外界打交道的唯一通道 |
-| Fiber | 运行实例(fiber) | 插件的一次运行:一个插件装一次,就是一个 |
-| Effect | 效应 | 组件对外界做的事,登记时须同时说清怎么撤销 |
-| Coeffect | 余效应 | 环境对组件的供给,通俗理解即"依赖" |
-| Disposable | 撤销动作 | 效应的逆变换,卸载时自动执行 |
-| EffectCallback | 效应回调(效果体) | 效应体:执行并交出"以后怎么撤销" |
-| EffectMeta | 效应元数据 | 效应名 + 嵌套子效应,组成诊断树 |
-| inject | 注入(依赖声明) | 声明"我要用什么服务" |
-| provide / get | 提供 / 获取 | 对外注册服务 / 受声明约束地取用 |
-| ReflectService | 服务仓库 | 全应用服务绑定的存放地 + 变更广播 |
-| Impl | 服务绑定 | 某服务名在某隔离域下的具体实现 |
-| realm / RealmKey | 隔离域 / 隔离域门牌 | 同名服务分域各存一份绑定;同门牌即共用 |
-| isolate / intercept / extend | 隔离 / 拦截 / 派生 | 子上下文的三种派生:独立绑定 / 叠加配置(权限收缩) / 普通派生 |
-| store | 依赖快照 | 启动那一刻,各依赖分别由谁提供 |
-| target | 目标视图 | "我的每个依赖现在由谁提供"的实时摘要 |
-| epoch | 世代 | 提供者换一拨,世代就推进 |
-| records | 撤销动作栈 | 登记过的全部效应,卸载时后进先出逆序执行 |
-| PENDING / LOADING / ACTIVE | 待命 / 加载中 / 运行中 | 六态生命周期前三态(待命是正常状态,不是错误) |
-| FAILED / UNLOADING / DISPOSED | 启动失败 / 卸载中 / 已销毁 | 后三态 |
-| INACTIVE_ACCESS / UNDECLARED_ACCESS | 未激活访问 / 未声明访问(越权) | get 能力检查的两类错误 |
-| notify | 变更广播 | 绑定一变,通知所有声明的实例重新检查依赖 |
-| reconcile | 调和 | 按 id 对账:消失的卸载、新增的挂载、存活的按字段最小扰动 |
-| Entry / Mounted | 配置条目 / 已挂载记录 | 装载清单里的一行声明 / 它对应的运行中实例 |
-| HMR (Hot Module Replacement) | 热更新(热模块替换) | 文件改了原地换血,进程不重启 |
-| ModuleGraph | 模块依赖图 | 谁引用谁,供热更新推导影响范围 |
-| emit / parallel / bail / waterfall | 顺序 / 并行 / 短路 / 瀑布派发 | 事件总线的四种派发模式 |
-
-## 模块
-
-```
-cordis-core
-├── dev.cordis.core             根包:各处共用的基础类型
-│   ├── Plugin / ConfigSchema   插件定义与配置校验器
-│   └── CordisException / ValidationException  统一异常(带稳定错误码)
-├── dev.cordis.core.effect      可回退效应(§3.1,算法 1):怎么登记、怎么撤销
-│   ├── Disposable              撤销动作(效应的"逆变换")
-│   ├── EffectCallback          效应回调(效果体):返回单个撤销动作;返回 Iterable 即多阶段(阶段间可被打断)
-│   └── EffectMeta              效应元数据(诊断树)
-├── dev.cordis.core.coeffect    余效应/服务依赖(§3.2,算法 2/3):需要什么、由谁提供
-│   ├── ReflectService          服务仓库(按隔离域门牌键控)+ notify 变更广播
-│   ├── Impl                    一条服务绑定(提供者 fiber + 值 + 可用性检查)
-│   ├── RealmKey                隔离域门牌:同名服务在不同域各有一条绑定
-│   └── Service                 服务基类:构造即 provide,随 fiber 卸载自动注销
-├── dev.cordis.core.runtime     运行时(§4/§5.1,算法 4/5/6):把上面两块粘成会自转的机器
-│   ├── Context                 一等上下文:服务解析(算法 6)、isolate 隔离/intercept 拦截派生、plugin() 挂载
-│   ├── Fiber                   运行实例与六态生命周期机(待命 PENDING → 加载中 LOADING → 运行中 ACTIVE;
-│   │                           启动失败 FAILED;卸载中 UNLOADING → 已销毁 DISPOSED;惰性链式转换)
-│   ├── FiberState              六态枚举
-│   ├── RegistryService         插件注册表:plugin() 即 O-Insert,其逆即 O-Retire(Definition 52)
-│   ├── PluginRuntime           插件运行时记录(同一插件所有运行实例的共用档案)
-│   ├── EventsService           事件总线:顺序派发 emit / 并行派发 parallel / 短路派发 bail /
-│   │                           瀑布派发 waterfall(监听器是可回退效应)
-│   └── Logger(+Service)        命名日志门面
-├── dev.cordis.loader           组件加载器(声明式,§5.2.1)
-│   ├── Entry                   配置条目:id/url/isolate/intercept/config/disabled(Definition 81)
-│   ├── PluginResolver          插件解析器:url → 插件(模块引入/撤出交给宿主)
-│   └── ComponentLoader         按 id 调和;逐字段最小扰动分发;正确性由 Theorem 80 保证
-└── dev.cordis.hmr              热更新引擎(HMR,热模块替换;§5.2.2,算法 8–10)
-    ├── HmrEngine.classify      阶段 1:模块分类不动点(可热换 accepted / 拒热换 declined;环上未决默认拒热换)
-    ├── HmrEngine.detectStale   阶段 2:陈旧配置条目检测(依赖树 ∩ accepted)
-    └── HmrEngine.reload        阶段 3:事务性重载(失败即从上一组件回滚,无半重载状态)
-
-cordis-example            插件实例与端到端演示(database/user/greeting + 隔离/拦截/HMR)
+```sh
+mvn test
+mvn package
+# 电商订单业务示例：库存、沙箱支付、仓配、隔离与促销热更新
+mvn install
+mvn -pl cordis-example exec:java
+# 真实 Java 源码 + YAML 配置监听；编辑 HelloPlugin.java 或 cordis.yaml 可观察更新
+mvn -pl cordis-core org.codehaus.mojo:exec-maven-plugin:3.2.0:java \
+  -Dexec.mainClass=dev.cordis.loader.CordisApplication \
+  -Dexec.args="examples/hot-reload/cordis.yaml examples/hot-reload/plugins --watch"
 ```
 
-## 快速开始
+电商示例的业务流程、插件职责与数据文件说明见 [cordis-example/README.md](cordis-example/README.md)。
 
-```bash
-mvn test                                  # 30 个单元测试
-mvn -pl cordis-example exec:java          # 端到端演示(先 mvn install)
-```
+需要 JDK 25。运行时除 JDK 外仅依赖 SnakeYAML 2.5，用于安全读取 YAML/JSON；编译器关闭注解处理。
 
-### 作为库使用
+## 效应与生命周期
 
 ```java
 Context root = Context.createRoot();
-
-// 插件:inject 即依赖声明(余效应规范 d),apply 即效应函数 e
-Plugin database = Plugin.of("database", List.of(), (ctx, cfg) -> {
-    ctx.effect(cb -> {           // 可回退效应:打开连接
-        log.info("opened");
-        return (Disposable) () -> log.info("closed");   // 撤销动作(逆变换)
-    }, "connection");
-    ctx.provide("db", new DbService(ctx));              // 提供(p)
-    return null;                                        // 已登记的效应自动回滚
+Plugin database = Plugin.of("database", List.of(), (ctx, config) -> {
+    ctx.provide("db", openDatabase());
+    return (Disposable) () -> closeDatabase();
 });
-
-Plugin users = Plugin.of("users", List.of("db"), (ctx, cfg) -> {
-    DbService db = ctx.get("db");                       // 能力受 inject 约束
-    return null;                                        // db 消失时整段自动回滚
-});
-
-Fiber f = root.plugin(users);        // 待命(PENDING):db 未提供,安静等待
-root.plugin(database).await();       // db 运行中(ACTIVE) → users 被通知 → 重载 → ACTIVE
-f.await();
+Fiber consumer = root.plugin(Plugin.of("users", List.of("db"), (ctx, config) -> {
+    Object db = ctx.get("db");
+    return (Disposable) () -> releaseUserResources(db);
+}));
+root.plugin(database).await(); // consumer 自动从 PENDING 进入 ACTIVE
+root.fiber().dispose();       // 等消费者撤销完，再撤销提供者，最后清空根效应
 ```
 
-### 声明式加载
+`Plugin.apply` 和 `ctx.effect` 接受 `null`、`Disposable`、`Iterable<Disposable>`、
+`CompletionStage`（可解析为上述结果）或 `AsyncEffect`。`AsyncDisposable` 的异步完成纳入生命周期：
 
 ```java
-ComponentLoader loader = new ComponentLoader(root, url -> resolveModule(url));
-loader.load(List.of(
-    Entry.of("users", "plugin-users").build(),          // 先挂载也安全:待命等提供者
-    Entry.of("database", "plugin-database").build()));
-loader.load(List.of(                                    // 变更调和(按 id 差分)
-    Entry.of("users", "plugin-users").build()));        // 移除 database → users 自动去激活
+Plugin async = Plugin.of("async", List.of(), (ctx, config) ->
+    connectAsync().thenApply(connection ->
+        (AsyncDisposable) connection::closeAsync));
+Fiber fiber = root.plugin(async);
+fiber.awaitAsync().thenRun(() -> useApplication());
+fiber.disposeAsync().toCompletableFuture().join();
 ```
 
-### 隔离与拦截
+`AsyncEffect.next()` 返回 `CompletionStage<AsyncEffect.Step>`。每次推进迭代前检查目标；
+已经开始的阶段会完成，其返回的逆操作始终被保留，然后停止后续阶段并回退。
+效应在执行用户代码前就登记到所有者，避免重入卸载遗漏资源。逆操作按 LIFO 执行，单项失败不阻止其余清理。
+
+六态为 `PENDING / LOADING / ACTIVE / FAILED / UNLOADING / DISPOSED`。
+`await()` 等当前转换稳定；`PENDING` 表示依赖未就绪，等待稳定不等于等待将来某天激活。
+异步回调可从其他执行器完成；状态修改由根上下文串行化。生命周期回调内使用
+`awaitAsync / updateAsync / restartAsync / disposeAsync`，不要阻塞等待自身或依赖自己的任务。
+`dispose()` 在外部调用时等待清理；在运行时回调中发起清理，由所有者等待完成。
+
+`ctx.get(name)` 依据声明和已提交视图检查能力；撤销期间仍可读取原依赖。
+`ctx.getOrNull(name)` 是显式的非受限反射查询。`ctx.set` 只允许提供者更新自己的值。
+每次 provision 都有独立身份，同一提供者撤回后重新提供也能触发消费者重载。
+
+## 隔离与服务拦截
 
 ```java
-Context tenantA = root.isolate("db", "db@tenant-a");   // 同名服务在不同隔离域独立解析
-Context policed = tenantA.intercept("db", Map.of("readOnly", true));  // 拦截:编排者收缩权限
+Context tenant = root.isolate("db", "tenant-a");
+Context restricted = tenant.intercept("db", Map.of("readOnly", true));
 ```
 
-### 热更新(HMR)
+不同服务使用相同字符串标签不会串域；相同服务与标签共享绑定。
+`isolate(name)` 创建私有域，显式传入 `RealmKey` 可按对象身份共享。
+配置合并从根到叶，且不修改祖先的 Map。
+
+Java 无法用 JDK Proxy 拦截任意具体类的属性访问，因此服务通过 `ContextualService<T>` 返回调用者视图。
+视图必须共享底层状态，并在方法调用时解析当前上下文的策略。具体类示例见 `cordis-example` 的 `OrderService`；接口服务可以使用：
 
 ```java
-ModuleGraph graph = url -> importsOf(url);
-var cls = HmrEngine.classify(Set.of("edited-module"), Set.of(/*externals*/), graph);
-var stale = HmrEngine.detectStale(entryUrls, cls.accepted(), cls.declined(), graph);
-HmrEngine.reload(loader, HmrEngine.idsForUrls(loader, stale), freshPlugins, backup);
-// 任一模块失败 → 全部从上一组件回滚,系统不进入半重载状态
+root.provide("db", Service.bind(Database.class, (caller, call) -> {
+    Object policy = caller.resolveIntercept("db");
+    // 根据 policy 校验权限，再调用共享状态上的对应方法
+    return dispatchDatabaseCall(policy, call);
+}));
 ```
 
-## 与 cordis(TS)的对应
+框架不把 `readOnly` 这样的任意元数据自动解释成所有服务的权限；其解释由服务实现。
+`Service` 基类负责自动注册和可用性检查。需要调用者策略的服务应实现上述视图契约。
 
-| cordis v4 | cordis-java |
-|---|---|
-| `ctx`(Proxy + prototype 链) | `Context`(parent 链 + 显式 isolate/intercept 表) |
-| `ctx.effect(cb)` / 生成器效应 | `ctx.effect(EffectCallback)`,惰性 `Iterable<Disposable>` 为多阶段(stage 边界即 Maybe(ℑ) 延续) |
-| `fiber.epoch` / `fiber.target` | `Fiber.epoch` 世代 / `Fiber.target` 目标视图(提供者 uid 摘要;覆写绑定不触发重载) |
-| `fiber.inertia`(Promise) | `Fiber.inertia`(同步 Runnable 链;命令式宿主的就地实现,Definition 23) |
-| unload 前等待被通知的依赖 | ACTIVE→UNLOADING 状态变化同步通知,依赖方先于提供者的撤销动作完成卸载(L-Unload guard) |
-| `@cordisjs/loader` 按 id 调和 | `ComponentLoader.reconcile` |
-| `@cordisjs/hmr`(Loader 内省) | `HmrEngine` + 宿主提供的 `ModuleGraph`/`PluginResolver` |
+## 声明式配置树
 
-## 设计取舍
+`ComponentLoader` 按条目 id 调和，检查重复 id 后才修改运行中的树。
+模块导入和异步启动不强制配置顺序；`reconcileAsync` 返回本次调和的完成阶段。
 
-- **同步转换**:cordis 基于 JS 事件循环的异步惯性;Java 版在调用线程上同步完成 reload/unload 链,
-  语义等价(转换一旦开始必然完成、完成后才响应新的目标变化),且顺序更易推理。异步效应可在
-  `Disposable` 内自行对接 `CompletableFuture`。
-- **无 Proxy**:Java 无属性拦截原语,`ctx.get(key)` 承担 Algorithm 6 的按需能力检查
-  (未声明访问(越权)抛 `UNDECLARED_ACCESS`;已声明未激活访问抛 `INACTIVE_ACCESS`)。
-- **模块解析**:JVM 无 Node 式模块注册表,`PluginResolver` 把"引入/撤出模块"交给宿主
-  (注册表、反射、外部文件均可);HMR 的 `fresh` 参数即"重编译后的新模块"。
-- **隔离域的门牌**:`isolate(name)` 生成私有隔离域;`isolate(name, label)` 以对象相等性 Join
-  (同 JS Symbol 语义),字符串门牌经 `RealmKey.shared` 全局共享。
+```java
+try (ComponentLoader loader = ConfigFile.open(root, resolver, Path.of("cordis.yaml"))) {
+    loader.load(List.of(Entry.of("db", "DatabasePlugin.java").config(config).build()));
+    loader.mounted("db").fiber.update(newConfig); // 配置回写
+}
+```
 
-## 测试
+```yaml
+- id: tenants
+  url: group
+  config:
+    - id: database
+      url: DatabasePlugin.java
+      isolate:
+        db: tenant-a
+      intercept:
+        db:
+          readOnly: true
+      config:
+        connection: demo
+- id: additional
+  url: include
+  config: nested/extra.yaml
+```
 
-`cordis-core/src/test` 共 6 个测试类、30 个用例,逐一锁住行为契约:LIFO 效应回滚、撤销动作单次处置、
-多阶段效应、待命→运行中的响应式加载、提供者撤离的 guard 顺序(消费者先卸载)、提供者替换触发重载、
-重复 provide 拒绝、restart/update、未声明/未激活访问错误、隔离域隔离与通知不过界、同门牌 Join、
-拦截配置合并、加载器逐字段调和、配置校验失败路径、HMR 分类不动点/环默认拒热换/陈旧检测/事务性回滚。
-对学习者而言,这 30 个用例同时也是一份**可执行的行为规格说明书**。
+`ConfigFile.open` 自动启用 `group / @cordis/group`、`include / @cordis/include`。
+include 路径相对所在文件解析，检测循环引用；子树资源受父 fiber 管理。
+插件调用 `fiber.update()` 或自行 dispose 时，会回写 config/disabled；嵌套组更新递归回写到对应文件。
+写文件使用同目录临时文件和原子替换；JSON 输出为 JSON，YAML 使用安全构造器并拒绝重复键。
+
+字段更新策略：id/url 改变重建，disabled 管理启停，config 交给组件处理；group 对子 id 递归差分。
+intercept 原地更新，不重启插件；isolate 原地迁移绑定，先检查冲突，再通知消费者重新解析。
+私有域在同一条目存活期间保持身份；删除条目后释放其域引用。
+`sourceLoader.move(id, targetLoader)` 可在同一应用的组间迁移条目，保留 fiber、私有域与资源，并转移卸载所有权。
+
+`ConfigWatcher` 监听根文件与动态 include 文件，防抖后调和；语法错误保留原树并发出
+`loader/config-error`，成功发出 `loader/config-reloaded`。
+配置应使用 JSON/YAML 数据值；任意 Java 对象及手工 RealmKey 无法持久化。
+
+## JVM 源码热更新
+
+```java
+try (JavaModuleResolver modules = new JavaModuleResolver(Path.of("plugins"));
+     ComponentLoader loader = ConfigFile.open(root, modules, Path.of("cordis.yaml"));
+     HotReloadService hmr = new HotReloadService(loader, modules, Duration.ofMillis(150))) {
+    // 修改 .java 文件会触发编译、替换或失败回滚；也可调用 hmr.reloadNow()
+}
+```
+
+`JavaModuleResolver` 编译源码目录，每一代用独立 ClassLoader 加载，Cordis API 由宿主共享。
+先编译和解析全部候选插件，再卸载旧实例；候选启动失败会先清理候选，恢复旧插件与解析器缓存。
+语法错误发生在卸载前，旧实例保持运行。HMR 覆盖当前配置树中的源码插件。
+监听由父上下文持有，关闭应用时自动停止；完整应用入口为 `CordisApplication.open`。
+
+`HmrEngine` 同时保留论文算法 8–10 对应的模块分类、陈旧条目检测和手工插件事务替换 API。
+源码依赖图采用保守引用分析。为避免同一源码目录中的类跨代混用，文件热更新重载该目录中
+**所有已挂载的源码插件**，并非只替换文本上直接变化的条目。
+可配置 externals；这些文件变化发出 `hmr/restart-required`，由宿主决定如何重启进程。
+
+适配范围：当前源码模块为 `.java`、无参构造的 `Plugin` 实现。依赖来自宿主 classpath；
+需要额外依赖时可显式给解析器传 classpath。不提供 Node ESM/CJS 缓存兼容、任意 JAR 动态下载、
+运行中对象的字段迁移或外部数据库事务回滚。旧 ClassLoader/编译产物保留到解析器 close，
+以支持旧代码回滚及延迟类加载；长时间开发会话应定期重建应用。
+
+## 事件、日志与定时器
+
+事件支持上下文范围、全局监听器（仍归注册者所有）、once、emit、parallelAsync 和 serialAsync。
+parallelAsync 先发起所有回调，再等待全部完成；serialAsync 按顺序等待并在非 null/false 结果处短路。
+`waterfall` 保留显式 `Supplier<Object> next` 的洋葱式调用协议。
+日志支持命名 Logger 和可增删的 exporter；`ctx.exporter` 让输出端随注册者自动移除。
+`ctx.accessor` 提供计算属性，`ctx.mixin(service, alias, Method)` 和 `ctx.call` 转发接口方法，
+并保留调用者的 inject 与拦截检查。它们是 Java 对动态属性与 mixin 的显式适配。
+
+`new TimerService(ctx)` 提供 `timer` 服务，支持 timeout、interval、debounce 和 trailing-edge throttle。
+经 `ctx.get("timer")` 获取的视图将每个定时器归属调用者 fiber；卸载时取消待执行回调。
+
+## 验证与语义边界
+
+当前有 77 个核心测试和 16 个业务示例测试，共 93 个测试用例。测试包含原有行为与新增的异步生命周期、回退异常、根关闭、消费者策略、域迁移、配置树/回写、
+实际文件监听、JDK 动态编译、共享辅助类变更和多插件 HMR 失败恢复。
+源码及文件监听集成测试使用临时目录和真实 JDK 编译器。
+
+论文的正确性结论具有前提：插件作者提供的逆操作必须实际撤销效应，服务操作须遵守对应的可组合性约束。
+框架不会自动撤销任意文件、网络请求或数据库写入，也不能证明用户提供的 inverse 正确。
+本项目提供这些机制及其行为验证，不将单元测试等同于对整个 Java 实现的形式化证明。

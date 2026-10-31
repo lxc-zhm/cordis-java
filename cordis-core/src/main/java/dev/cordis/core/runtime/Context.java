@@ -34,10 +34,25 @@ import java.util.function.Predicate;
  */
 public final class Context {
 
-    private final Context parent;                       // null for root
+    private Context parent;                       // null for root
     private final Map<String, RealmKey> isolateMap = new LinkedHashMap<>();
     private final Map<String, Object> interceptMap = new LinkedHashMap<>();
     private final Context rootRef;
+
+    private final Object runtimeLock = new Object();
+
+    /**
+     * Serialize runtime changes, including completions from arbitrary executors. Never block in this section.
+     */
+    public <T> T atomic(java.util.function.Supplier<T> action) {
+        synchronized (rootRef.runtimeLock) {
+            return action.get();
+        }
+    }
+
+    public boolean inRuntime() {
+        return Thread.holdsLock(rootRef.runtimeLock);
+    }
 
     private Fiber fiber;
     private ReflectService reflect;   // root only
@@ -50,7 +65,9 @@ public final class Context {
         this.rootRef = parent == null ? this : parent.rootRef;
     }
 
-    /** 创建根上下文:内置各核心服务和根 fiber,应用的入口。 */
+    /**
+     * 创建根上下文:内置各核心服务和根 fiber,应用的入口。
+     */
     public static Context createRoot() {
         Context root = new Context(null);
         root.reflect = new ReflectService(root);
@@ -71,7 +88,9 @@ public final class Context {
         return rootRef;
     }
 
-    /** 本上下文所属的 fiber:自己的,没有就往父级找。 */
+    /**
+     * 本上下文所属的 fiber:自己的,没有就往父级找。
+     */
     public Fiber fiber() {
         for (Context c = this; c != null; c = c.parent) {
             if (c.fiber != null) return c.fiber;
@@ -89,7 +108,9 @@ public final class Context {
         return child;
     }
 
-    /** 直接在本上下文安装一条拦截配置(fiber 构造时用它装 inject 自带的配置)。 */
+    /**
+     * 直接在本上下文安装一条拦截配置(fiber 构造时用它装 inject 自带的配置)。
+     */
     void interceptSelf(String name, Object config) {
         interceptMap.put(name, config);
     }
@@ -111,13 +132,15 @@ public final class Context {
     public Context isolate(String name, Object label) {
         RealmKey key = label instanceof RealmKey rk ? rk
                 : label == null ? RealmKey.fresh(name)
-                : RealmKey.shared(label);
+                : RealmKey.shared(name, label);
         Context child = new Context(this);
         child.isolateMap.put(name, key);
         return child;
     }
 
-    /** 同上,但新建一个独享域。 */
+    /**
+     * 同上,但新建一个独享域。
+     */
     public Context isolate(String name) {
         return isolate(name, null);
     }
@@ -132,7 +155,9 @@ public final class Context {
         return child;
     }
 
-    /** 合并某服务的拦截配置:从根往叶子合并,叶子优先。 */
+    /**
+     * 合并某服务的拦截配置:从根往叶子合并,叶子优先。
+     */
     public Object resolveIntercept(String name) {
         List<Object> configs = new ArrayList<>();
         for (Context c = this; c != null; c = c.parent) {
@@ -143,25 +168,19 @@ public final class Context {
         Object merged = null;
         for (Object v : configs) {
             if (merged instanceof Map<?, ?> && v instanceof Map<?, ?>) {
-                Map<Object, Object> m = merged instanceof java.util.LinkedHashMap<?, ?> lm
-                        ? castMap(lm)
-                        : new LinkedHashMap<>();
-                if (m.isEmpty() && !(merged instanceof java.util.LinkedHashMap<?, ?>)) m.putAll((Map<?, ?>) merged);
+                Map<Object, Object> m = new LinkedHashMap<>((Map<?, ?>) merged);
                 m.putAll((Map<?, ?>) v);
                 merged = m;
             } else {
-                merged = v;
+                merged = v instanceof Map<?, ?> map ? new LinkedHashMap<>(map) : v;
             }
         }
         return merged;
     }
 
-    @SuppressWarnings({"unchecked"})
-    private static Map<Object, Object> castMap(Map<?, ?> m) {
-        return (Map<Object, Object>) m;
-    }
-
-    /** 本上下文解析 name 服务时落在哪个隔离域。 */
+    /**
+     * 本上下文解析 name 服务时落在哪个隔离域。
+     */
     public RealmKey resolveRealm(String name) {
         for (Context c = this; c != null; c = c.parent) {
             RealmKey key = c.isolateMap.get(name);
@@ -178,19 +197,28 @@ public final class Context {
      * @throws CordisException 声明了但提供者未加载(INACTIVE_ACCESS),
      *                         或从未声明过(UNDECLARED_ACCESS)
      */
-    @SuppressWarnings("unchecked")
     public <T> T get(String name) {
+        return atomic(() -> getChecked(name));
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T getChecked(String name) {
+        ReflectService.Accessor property = reflect().accessor(name);
+        if (property != null) return (T) property.read().apply(this);
         Fiber f = fiber();
         if (f.runtime == null) {
             // 根上下文访问:没有 inject 能力约束,直接按依赖快照查
             Impl impl = rootRef.reflect.getImpl(this, name, false);
-            return impl == null ? null : (T) impl.value;
+            return impl == null ? null : (T) contextualize(impl.value);
         }
         RealmKey key = resolveRealm(name);
         while (true) {
             if (f.store != null) {
                 Impl impl = f.store.get(name);
-                if (impl != null) return (T) impl.value;
+                if (impl != null && impl.fiber == f && impl.realm != key) impl = null;
+                for (Impl provision : f.provisions())
+                    if (provision.name.equals(name) && provision.realm == key) impl = provision;
+                if (impl != null) return (T) contextualize(impl.value);
             }
             if (f.inject.containsKey(name)) {
                 throw new CordisException(CordisException.Code.INACTIVE_ACCESS,
@@ -209,16 +237,33 @@ public final class Context {
         }
     }
 
-    /** 不做声明检查地读服务;没有(或提供者未就绪)返回 null。 */
+    /**
+     * 不做声明检查地读服务;没有(或提供者未就绪)返回 null。
+     */
     public Object getOrNull(String name) {
-        Impl impl = rootRef.reflect.getImpl(this, name, false);
-        return impl == null ? null : impl.value;
+        return atomic(() -> {
+            Impl impl = rootRef.reflect.getImpl(this, name, false);
+            return impl == null ? null : contextualize(impl.value);
+        });
     }
 
     /**
      * 更新已提供服务的值;只有提供者 fiber 自己能改,没提供过的名字会抛异常。
      */
     public void set(String name, Object value) {
+        atomic(() -> {
+            setValue(name, value);
+            return null;
+        });
+    }
+
+    private void setValue(String name, Object value) {
+        ReflectService.Accessor property = reflect().accessor(name);
+        if (property != null) {
+            if (property.write() == null) throw new CordisException(CordisException.Code.INVALID_SET, "Read-only property: " + name);
+            property.write().accept(this, value);
+            return;
+        }
         RealmKey key = resolveRealm(name);
         Impl impl = rootRef.reflect.bindingAt(key);
         if (impl == null) {
@@ -232,58 +277,201 @@ public final class Context {
         impl.value = value;
     }
 
-    /** 由当前 fiber 提供一个服务(fiber 卸载时自动注销)。 */
+    /**
+     * 由当前 fiber 提供一个服务(fiber 卸载时自动注销)。
+     */
     public Disposable provide(String name, Object value) {
         return provide(name, value, null);
     }
 
-    /** 提供服务并附带“是否可用”检查:依赖方加载前会先问一次。 */
+    /**
+     * 提供服务并附带“是否可用”检查:依赖方加载前会先问一次。
+     */
     public Disposable provide(String name, Object value, Predicate<Object> check) {
         return fiber().provide(this, name, value, check);
     }
 
     // ------------------------------------------------------- effects & lifecycle
 
-    /** 登记一个可撤销的效应(详见 Fiber.effect)。 */
+    /**
+     * 登记一个可撤销的效应(详见 Fiber.effect)。
+     */
     public Disposable effect(EffectCallback callback) {
         return effect(callback, "anonymous");
     }
 
-    /** 同上,附带诊断名。 */
+    /**
+     * 同上,附带诊断名。
+     */
     public Disposable effect(EffectCallback callback, String label) {
         return fiber().effect(callback, label);
     }
 
-    /** 在本上下文加载一个插件;依赖齐了自动启动,不齐就先等着。 */
+    /**
+     * 在本上下文加载一个插件;依赖齐了自动启动,不齐就先等着。
+     */
     public Fiber plugin(Plugin plugin) {
         return plugin(plugin, null);
     }
 
-    /** 加载插件并附带配置(会先过插件的配置校验器)。 */
+    /**
+     * 加载插件并附带配置(会先过插件的配置校验器)。
+     */
     public Fiber plugin(Plugin plugin, Object config) {
         return registry().plugin(this, plugin, config);
     }
 
-    /** 简写:等依赖齐了就执行回调,依赖换了自动重跑。 */
+    /**
+     * 简写:等依赖齐了就执行回调,依赖换了自动重跑。
+     */
     public Fiber inject(List<String> deps, java.util.function.BiFunction<Context, Object, Object> body) {
         return registry().inject(this, deps, body);
     }
 
     // ------------------------------------------------------------------ events
 
-    /** 注册事件监听器(当前 fiber 卸载时自动移除)。 */
+    /**
+     * 注册事件监听器(当前 fiber 卸载时自动移除)。
+     */
     public Disposable on(String name, EventsService.Listener listener) {
         return events().on(this, name, listener, false);
     }
 
-    /** 注册全局监听器:任何上下文发出的事件都收得到。 */
+    /**
+     * 注册全局监听器:任何上下文发出的事件都收得到。
+     */
     public Disposable onGlobal(String name, EventsService.Listener listener) {
-        return events().on(getRoot(), name, listener, false);
+        return events().onGlobal(this, name, listener);
     }
 
-    /** 从本上下文派发事件(会冒泡给祖先上的监听器)。 */
+    /**
+     * 从本上下文派发事件(会冒泡给祖先上的监听器)。
+     */
     public void emit(String name, Object... args) {
         events().emit(this, name, args);
+    }
+
+    /**
+     * Resolve a context-aware service view without changing the shared service state.
+     */
+    private Object contextualize(Object value) {
+        return value instanceof dev.cordis.core.coeffect.ContextualService<?> service ? service.inContext(this) : value;
+    }
+
+    public java.util.concurrent.CompletionStage<Void> disposeAsync() {
+        return fiber().disposeAsync();
+    }
+
+    public Disposable accessor(String name, java.util.function.Function<Context, Object> read,
+                               java.util.function.BiConsumer<Context, Object> write) {
+        return reflect().accessor(this, name, read, write);
+    }
+
+    @FunctionalInterface
+    public interface Invokable { Object invoke(Object... arguments); }
+
+    /** Expose an interface method as an explicit context function, preserving inject and policy checks. */
+    public Disposable mixin(String service, String alias, java.lang.reflect.Method method) {
+        return accessor(alias, caller -> (Invokable) arguments -> {
+            Object target = caller.get(service);
+            try { return method.invoke(target, arguments); }
+            catch (java.lang.reflect.InvocationTargetException error) { throw dev.cordis.core.effect.Stages.propagate(error.getCause()); }
+            catch (ReflectiveOperationException error) { throw new IllegalArgumentException("Cannot forward " + method, error); }
+        }, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T call(String name, Object... arguments) {
+        Object value = get(name);
+        if (!(value instanceof Invokable function)) throw new IllegalArgumentException("Not a context function: " + name);
+        return (T) function.invoke(arguments);
+    }
+
+    public Disposable exporter(LoggerService.Exporter exporter) {
+        return effect(ctx -> {
+            loggerService().addExporter(exporter);
+            return (Disposable) () -> loggerService().removeExporter(exporter);
+        }, "logger exporter");
+    }
+
+    public Disposable once(String name, EventsService.Listener listener) { return events().once(this, name, listener); }
+
+    /**
+     * Move a managed context within the same root, preserving its local realms.
+     */
+    public void reparent(Context next) {
+        atomic(() -> {
+            if (next.rootRef != rootRef) throw new IllegalArgumentException("Cannot move across application roots");
+            for (Context cursor = next; cursor != null; cursor = cursor.parent)
+                if (cursor == this) throw new IllegalArgumentException("Context cycle");
+            Context previous = parent;
+            parent = next;
+            try {
+                patchRealms(new LinkedHashMap<>(isolateMap));
+            } catch (RuntimeException error) {
+                parent = previous;
+                throw error;
+            }
+            return null;
+        });
+    }
+
+    /**
+     * Loader-owned context patch. Interception is read on invocation; changes need no restart.
+     */
+    public void patchIntercept(Map<String, Object> values) {
+        atomic(() -> {
+            interceptMap.clear();
+            interceptMap.putAll(values);
+            return null;
+        });
+    }
+
+    /**
+     * Reassign provisions in this subtree atomically, then notify both old and new scopes.
+     */
+    public void patchRealms(Map<String, RealmKey> values) {
+        atomic(() -> {
+            Map<dev.cordis.core.coeffect.Impl, RealmKey> moves = new LinkedHashMap<>();
+            for (Impl impl : rootRef.fiber.provisions()) moves.put(impl, impl.realm);
+            for (PluginRuntime runtime : registry().runtimes())
+                for (Fiber f : List.copyOf(runtime.fibers)) {
+                    for (dev.cordis.core.coeffect.Impl impl : f.provisions()) moves.put(impl, impl.realm);
+                }
+            Map<String, RealmKey> previous = new LinkedHashMap<>(isolateMap);
+            isolateMap.clear();
+            isolateMap.putAll(values);
+            Map<RealmKey, dev.cordis.core.coeffect.Impl> destinations = new LinkedHashMap<>();
+            try {
+                for (var entry : moves.entrySet()) {
+                    var impl = entry.getKey();
+                    RealmKey destination = impl.context.resolveRealm(impl.name);
+                    if (destination == entry.getValue()) continue;
+                    var occupying = reflect().bindingAt(destination);
+                    boolean movingAway = occupying != null && moves.containsKey(occupying)
+                            && occupying.context.resolveRealm(occupying.name) != occupying.realm;
+                    if ((occupying != null && occupying != impl && !movingAway) || destinations.put(destination, impl) != null)
+                        throw new CordisException(CordisException.Code.DUPLICATE_PROVIDE, "realm move conflicts: " + impl.name);
+                }
+            } catch (RuntimeException error) {
+                isolateMap.clear();
+                isolateMap.putAll(previous);
+                throw error;
+            }
+            for (var entry : moves.entrySet())
+                if (entry.getKey().context.resolveRealm(entry.getKey().name) != entry.getValue())
+                    reflect().unbind(entry.getValue());
+            destinations.forEach((realm, impl) -> {
+                impl.realm = realm;
+                reflect().bind(realm, impl);
+            });
+            for (PluginRuntime runtime : registry().runtimes())
+                for (Fiber f : List.copyOf(runtime.fibers)) {
+                    f.inject.keySet().forEach(f::checkImpl);
+                    f.refresh();
+                }
+            return null;
+        });
     }
 
     // ---------------------------------------------------------------- built-ins
@@ -304,7 +492,9 @@ public final class Context {
         return rootRef.logger;
     }
 
-    /** 取指定名字的日志器。 */
+    /**
+     * 取指定名字的日志器。
+     */
     public Logger logger(String name) {
         return rootRef.logger.logger(name);
     }

@@ -5,8 +5,8 @@ import dev.cordis.core.runtime.Context;
 /**
  * 服务基类:想把自己的实例挂到 ctx 上的类继承它。
  *
- * <p>子类在构造方法里调 super(ctx, 名字),实例立刻注册为当前 fiber 的一个效果;
- * fiber 卸载时自动注销,不用手写清理代码。</p>
+ * <p>子类在构造方法里调 super(ctx, 名字),实例立刻注册为当前运行实例的一个效应;
+ * 运行实例卸载时自动注销,不用手写清理代码。</p>
  */
 public abstract class Service {
 

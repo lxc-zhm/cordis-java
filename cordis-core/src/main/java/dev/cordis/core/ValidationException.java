@@ -5,7 +5,8 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 插件配置未通过校验时抛出的异常。
+ * 配置校验异常:插件配置未通过 {@link ConfigSchema} 校验时抛出,
+ * 携带每条问题(出错信息 + 出错位置)。
  */
 public class ValidationException extends CordisException {
 

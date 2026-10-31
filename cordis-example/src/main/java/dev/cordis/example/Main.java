@@ -27,13 +27,13 @@ import java.util.function.Supplier;
  * 插件实例演示。依次展示本移植版的全部能力:
  *
  * <ol>
- *   <li>响应式余效应——消费者等待(PENDING)其提供者,随后激活;撤销提供者会使其
- *       去激活并回退其效应;重新提供则重新激活;</li>
+ *   <li>响应式余效应——消费者待命(PENDING)等其提供者,依赖齐了再运行;撤销提供者会使其
+ *       去激活并回退其效应;重新提供则重新运行;</li>
  *   <li>时间可组合性——卸载时效应按 LIFO 顺序逆转,全程可观察;</li>
- *   <li>声明式加载器——按 entry id 进行调和;</li>
- *   <li>隔离——两个租户共享同一插件代码,但把 {@code db} 解析到不同 realm;</li>
+ *   <li>声明式加载器——按配置条目 id 进行调和;</li>
+ *   <li>隔离——两个租户共享同一插件代码,但把 {@code db} 解析到不同隔离域(realm);</li>
  *   <li>拦截——编排者授予只读 db,无需改动提供者或消费者;</li>
- *   <li>HMR——"编辑"greeting 模块,仅其 fiber 被替换,故障模块自动回滚。</li>
+ *   <li>热更新——"编辑"greeting 模块,仅其运行实例被替换,故障模块自动回滚。</li>
  * </ol>
  */
 public final class Main {
@@ -58,7 +58,7 @@ public final class Main {
 
         ComponentLoader loader = newLoader(root);
 
-        banner("1. 响应式余效应:users 声明 db,直到 db ACTIVE 才加载");
+        banner("1. 响应式余效应:users 声明 db,直到 db 运行中(ACTIVE)才加载");
         loader.load(List.of(
                 Entry.of("users", "plugin-users").build(),
                 Entry.of("database", "plugin-database").build()));
@@ -71,7 +71,7 @@ public final class Main {
         loader.load(List.of(Entry.of("users", "plugin-users").build()));
         printStates(root);
 
-        banner("3. 重新提供:users 针对新的提供者 fiber 重新激活");
+        banner("3. 重新提供:users 针对新的提供者重新运行");
         loader.load(List.of(
                 Entry.of("users", "plugin-users").build(),
                 Entry.of("database", "plugin-database").build()));
@@ -119,7 +119,7 @@ public final class Main {
             System.out.println("写入被按设计拒绝:" + e.getMessage());
         }
 
-        banner("7. HMR:编辑 greeting 模块——仅其 fiber 被替换");
+        banner("7. 热更新(HMR):编辑 greeting 模块——仅其运行实例被替换");
         loader.disposeAll(); // 释放全局 db realm,供 hmr 加载器使用
         ComponentLoader hmrLoader = newLoader(root);
         hmrLoader.load(List.of(
@@ -151,10 +151,10 @@ public final class Main {
         } catch (Exception e) {
             System.out.println("重载按预期失败:" + e.getMessage());
         }
-        System.out.println("回滚后的 greeting fiber:#" + hmrLoader.mounted("greeting").fiber.uid
+        System.out.println("回滚后的 greeting 运行实例:#" + hmrLoader.mounted("greeting").fiber.uid
                 + "(上一组件仍在服务)");
 
-        banner("结束——释放 root,级联贯穿每一个 fiber");
+        banner("结束——释放 root,级联贯穿每一个运行实例");
         loader.disposeAll();
         loaderA.disposeAll();
         loaderBP.disposeAll();

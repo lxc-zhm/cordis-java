@@ -7,9 +7,9 @@
  *
  * <ul>
  *   <li>{@link dev.cordis.core.effect.Disposable} —— 一个撤销动作(效应的“逆变换”);</li>
- *   <li>{@link dev.cordis.core.effect.EffectCallback} —— 效果体:返回单个撤销动作,
+ *   <li>{@link dev.cordis.core.effect.EffectCallback} —— 效应回调:返回单个撤销动作,
  *       或一组(多阶段,阶段之间可以被打断、只回滚已完成部分);</li>
- *   <li>{@link dev.cordis.core.effect.EffectMeta} —— 效果的诊断树,排查问题用。</li>
+ *   <li>{@link dev.cordis.core.effect.EffectMeta} —— 效应元数据(诊断树),排查问题用。</li>
  * </ul>
  */
 package dev.cordis.core.effect;

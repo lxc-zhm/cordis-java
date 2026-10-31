@@ -28,7 +28,7 @@ import java.util.function.Supplier;
  * <ul>
  *   <li><b>依赖快照</b>(store)—— 启动那一刻,各个依赖服务分别由谁提供;</li>
  *   <li><b>目标视图</b>(target)—— “我的每个依赖现在由谁提供”的摘要;</li>
- *   <li><b>撤销动作栈</b> —— 登记过的所有效果怎么撤销。</li>
+ *   <li><b>撤销动作栈</b> —— 登记过的所有效应怎么撤销。</li>
  * </ul>
  *
  * <p>工作方式:依赖有变化就重算 target;target 变了就触发加载(reload)
@@ -70,13 +70,15 @@ public final class Fiber {
 
     // ---- internals
     final Map<String, Impl> pendingStore = new LinkedHashMap<>();
+    /** 世代:当前目标视图对应的提供者世代摘要;有依赖缺失时为 INACTIVE,变化即触发转换。 */
     String epoch = INACTIVE;
     Runnable inertia = null;
     Throwable error;
+    /** 撤销动作栈:登记过的所有效应,卸载时按后进先出逆序执行。 */
     final List<EffectRecord> records = new ArrayList<>();
     final Deque<EffectMeta> metaStack = new ArrayDeque<>();
 
-    /** 一条已登记的效果:撤销动作 + 诊断信息。 */
+    /** 一条已登记的效应:撤销动作 + 效应元数据。 */
     static final class EffectRecord {
         final Disposable disposable;
         final EffectMeta meta;
@@ -104,9 +106,8 @@ public final class Fiber {
                 if (e.getValue() != null) ctx.interceptSelf(e.getKey(), e.getValue());
             }
 
-            // The instantiation primitive (paper Definition 52): this effect on the
-            // parent is O-Insert; its inverse (the Disposable below) is O-Retire, so
-            // unloading a parent cascades to its children.
+            // 实例化原语(论文 Definition 52):登记在父实例上的这个效应即 O-Insert,
+            // 其逆(下面的撤销动作)即 O-Retire,因此卸载父实例会级联卸载子实例。
             this.retireHandle = parentCtx.fiber().effect(cb -> {
                 runtime.fibers.add(this);
                 return (Disposable) () -> {
@@ -116,7 +117,7 @@ public final class Fiber {
                     if (runtime.fibers.isEmpty()) root.registry().removeRuntime(runtime);
                     setEpoch(INACTIVE);
                     runChain();
-                    // A PENDING fiber may already own effects; explicitly unload them.
+                    // 待命中的运行实例可能已登记效应;这里显式卸载它们。
                     if (inertia == null && !records.isEmpty()) {
                         state = FiberState.UNLOADING;
                         inertia = this::unloadCycle;
@@ -132,7 +133,7 @@ public final class Fiber {
                 refresh();
             }
         } else {
-            // root fiber
+            // 根运行实例:整个应用的根
             this.uid = 0L;
             this.ctx = parentCtx;
             this.state = FiberState.ACTIVE;
@@ -152,7 +153,7 @@ public final class Fiber {
         return "root";
     }
 
-    /** 已卸载就抛异常(防止在死掉的 fiber 上继续登记效果)。 */
+    /** 已卸载就抛异常(防止在死掉的运行实例上继续登记效应)。 */
     public void assertActive() {
         if (uid != null) return;
         throw new CordisException(CordisException.Code.INACTIVE_EFFECT);
@@ -161,7 +162,7 @@ public final class Fiber {
     // ------------------------------------------------------------------ effects
 
     /**
-     * 登记一个“可撤销的效果”(本框架最核心的机制)。
+     * 登记一个“可撤销的效应回调”(本框架最核心的机制)。
      *
      * <p>回调立即执行;它返回的撤销动作会被收进本 fiber 的栈里,
      * 卸载时(或手动调用返回值时)按逆序执行。返回的 disposer 调两次无害。</p>
@@ -169,9 +170,9 @@ public final class Fiber {
      * <p>回调返回惰性 Iterable 时按“阶段”逐个取:每取一个阶段前先检查
      * 目标是否还成立,不成立就停下——已完成的部分照常登记,未开始的不再执行。</p>
      *
-     * @param callback 效果体
+     * @param callback 效应回调
      * @param label    诊断用的名字(见 getEffects)
-     * @return 手动撤销该效果的动作
+     * @return 手动撤销该效应的动作
      */
     public Disposable effect(EffectCallback callback, String label) {
         assertActive();
@@ -237,7 +238,7 @@ public final class Fiber {
         }
     }
 
-    /** 当前登记的所有效果(诊断用)。 */
+    /** 当前登记的所有效应的元数据(诊断用)。 */
     public List<EffectMeta> getEffects() {
         List<EffectMeta> out = new ArrayList<>();
         for (EffectRecord record : records) out.add(record.meta);
@@ -290,7 +291,7 @@ public final class Fiber {
         String old = epoch;
         if (Objects.equals(newEpoch, old)) return;
         epoch = newEpoch;
-        if (inertia != null) return; // the in-flight transition will re-check and chain
+        if (inertia != null) return; // 进行中的转换结束后会重新检查并链入下一个转换
         if (!INACTIVE.equals(newEpoch) && INACTIVE.equals(old)) {
             updateState(FiberState.LOADING);
             inertia = this::reloadCycle;
@@ -310,7 +311,7 @@ public final class Fiber {
         }
     }
 
-    /** Load: commit the resolved view, resolve config, run the plugin body, then settle or chain (Algorithm 5, reload). */
+    /** 加载:提交解析好的依赖快照、解析配置、执行插件主体,然后稳定或链入下一个转换(算法 5 的 reload)。 */
     private void reloadCycle() {
         store = new LinkedHashMap<>(pendingStore);
         String oldEpoch = epoch;
@@ -344,11 +345,11 @@ public final class Fiber {
         }
     }
 
-    /** Unload: run every accumulated inverse in LIFO order, then settle or chain (Algorithm 5, unload). */
+    /** 卸载:按后进先出执行全部撤销动作,然后稳定或链入下一个转换(算法 5 的 unload)。 */
     private void unloadCycle() {
-        // Dependents were already drained: the ACTIVE→UNLOADING state change
-        // notified them, and their unload chains ran synchronously (the guard
-        // on L-Unload; cordis awaits notified dependents here instead).
+        // 依赖方已经先走完:ACTIVE→UNLOADING 的状态变化通知了它们,
+        // 它们的卸载链已同步执行完毕(L-Unload 的保证顺序:消费者先于提供者完成撤销;
+        // TS 版是在这里 await 被通知的依赖方)。
         List<EffectRecord> pending = new ArrayList<>(records);
         records.clear();
         for (int i = pending.size() - 1; i >= 0; i--) {
@@ -380,7 +381,7 @@ public final class Fiber {
         state = next;
         if (old == next) return;
         ctx.getRoot().events().emit(null, "internal/status", this, old);
-        // only notify changes between ACTIVE and NON-ACTIVE states
+        // 只有 ACTIVE 与非 ACTIVE 之间的变化才通知依赖方
         if ((old == FiberState.ACTIVE) == (next == FiberState.ACTIVE)) return;
         List<String> names = new ArrayList<>();
         for (Impl impl : ctx.getRoot().reflect().bindingsOf(this)) {
@@ -439,7 +440,7 @@ public final class Fiber {
         assertActive();
         this.rawConfig = newConfig;
         if (state != FiberState.ACTIVE) {
-            // Config resolution may access injected services: defer until activation.
+            // 配置解析可能要访问注入的服务:推迟到激活时再执行。
             error = null;
             setEpoch(INACTIVE);
             refresh();
@@ -464,11 +465,11 @@ public final class Fiber {
         }
     }
 
-    /** 由本 fiber 提供一个服务;“注销绑定”也做成撤销动作,卸载时自动生效。 */
+    /** 由本运行实例(fiber)提供服务;“注销绑定”也做成撤销动作,卸载时自动生效。 */
     Disposable provide(Context from, String name, Object value, Predicate<Object> check) {
         ReflectService reflect = ctx.getRoot().reflect();
         return effect(cb -> {
-            reflect.globalRealm(name); // ensure a default realm exists for global resolvers
+            reflect.globalRealm(name); // 确保该服务名有默认共享域,供全局解析使用
             RealmKey key = from.resolveRealm(name);
             Impl existing = reflect.bindingAt(key);
             if (existing != null) {

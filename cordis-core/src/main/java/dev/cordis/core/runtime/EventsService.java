@@ -12,17 +12,20 @@ import java.util.function.Supplier;
 /**
  * 事件总线:发布/订阅消息用(挂在根上下文上)。
  *
- * <p>监听器也是一种“效果”:注册它的 fiber 卸载时会被自动移除。
- * 派发遵循冒泡规则:在上下文 A 上注册的监听器,能收到 A 及其子上下文发出的事件。</p>
+ * <p>监听器也是一种“效应”:注册它的运行实例卸载时会被自动移除。
+ * 派发遵循冒泡规则:在上下文 A 上注册的监听器,能收到 A 及其子上下文发出的事件。
+ * 四种派发模式:{@link #emit 顺序派发}、{@link #parallel 并行派发}、
+ * {@link #bail 短路派发}、{@link #waterfall 瀑布派发}。</p>
  */
 public final class EventsService {
 
-    /** 监听器回调;waterfall 派发时,参数数组的最后一个元素是“下一步”回调。 */
+    /** 监听器回调;瀑布派发(waterfall)时,参数数组的最后一个元素是“下一步”回调。 */
     @FunctionalInterface
     public interface Listener {
         Object invoke(Object... args);
     }
 
+    /** 一条监听器登记:注册所在的上下文 + 回调。 */
     static final class Hook {
         final Context ctx;
         final Listener listener;
@@ -75,7 +78,7 @@ public final class EventsService {
         return false;
     }
 
-    /** 同步派发事件:不关心监听器返回值;监听器抛异常只记日志,不打断别人。 */
+    /** 顺序派发:逐个调用监听器,不关心返回值;监听器抛异常只记日志,不打断别人。 */
     public void emit(Context thisArg, String name, Object... args) {
         for (Listener listener : dispatch(thisArg, name)) {
             try {
@@ -86,7 +89,10 @@ public final class EventsService {
         }
     }
 
-    /** 顺序调用所有监听器;有人抛错也先跑完,最后把第一个错误抛出去。 */
+    /**
+     * 并行派发(本实现为同步模拟):所有监听器都会执行完,有人抛错不打断别人,
+     * 最后把第一个错误抛出去——对应 TS 版“并行跑完、任一失败即失败”的语义。
+     */
     public void parallel(Context thisArg, String name, Object... args) {
         Throwable first = null;
         for (Listener listener : dispatch(thisArg, name)) {
@@ -106,7 +112,7 @@ public final class EventsService {
         return value != null && !Boolean.FALSE.equals(value);
     }
 
-    /** 依次调用监听器,遇到一个“到此为止”的返回值就停;返回该值或 null。 */
+    /** 短路派发:依次调用监听器,遇到一个“到此为止”的返回值就停;返回该值或 null。 */
     public Object bail(Context thisArg, String name, Object... args) {
         for (Listener listener : dispatch(thisArg, name)) {
             Object result = listener.invoke(args);
@@ -116,7 +122,7 @@ public final class EventsService {
     }
 
     /**
-     * 洋葱式派发:最后一个参数是“最里层”的默认行为;
+     * 瀑布派发(洋葱式):最后一个参数是“最里层”的默认行为;
      * 每个监听器都会额外收到一个 next,调用 next 才会继续走后面的流程,
      * 不调用就等于否决(可用于拦截)。
      */

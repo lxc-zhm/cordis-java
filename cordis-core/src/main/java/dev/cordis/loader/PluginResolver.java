@@ -3,10 +3,10 @@ package dev.cordis.loader;
 import dev.cordis.core.Plugin;
 
 /**
- * 把 Entry 的 url 解析成要安装的插件。
+ * 插件解析器:把配置条目(Entry)的 url 解析成要安装的插件。
  *
  * <p>Java 没有 Node 那种现成的模块注册表,所以“加载/卸载模块”交给宿主实现:
- * 可以从注册表查、反射加载类、读外部文件;HMR 时返回一个新实例就代表“改过的代码”。</p>
+ * 可以从注册表查、反射加载类、读外部文件;热更新时返回一个新实例就代表“改过的代码”。</p>
  */
 @FunctionalInterface
 public interface PluginResolver {

@@ -10,11 +10,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 插件注册表:管理“哪个插件有哪些 fiber”(挂在根上下文上)。
+ * 插件注册表:管理“哪个插件有哪些运行实例(fiber)”(挂在根上下文上)。
  *
  * <p>{@link #plugin} 是启动入口:创建或复用插件的运行时记录,
  * 在当前上下文下实例化一个 {@link Fiber}。
- * “挂载”这个动作本身是父 fiber 的一个效果——卸载父 fiber 时会自动连带卸载子 fiber。</p>
+ * “挂载”这个动作本身是父实例的一个效应——卸载父实例时会自动连带卸载子实例。</p>
  */
 public final class RegistryService {
 
@@ -27,7 +27,7 @@ public final class RegistryService {
         this.root = root;
     }
 
-    /** 分配下一个 fiber 编号(每调用一次加一)。 */
+    /** 分配下一个运行实例编号(每调用一次加一)。 */
     synchronized int nextUid() {
         return ++counter;
     }
@@ -47,7 +47,7 @@ public final class RegistryService {
         return internal.get(plugin);
     }
 
-    /** 卸载某插件的全部 fiber,并删除它的运行时记录。 */
+    /** 卸载某插件的全部运行实例,并删除它的运行时记录。 */
     public synchronized void delete(Plugin plugin) {
         PluginRuntime runtime = internal.remove(plugin);
         if (runtime == null) return;
@@ -60,7 +60,7 @@ public final class RegistryService {
         internal.remove(runtime.plugin);
     }
 
-    /** 卸载所有插件的所有 fiber,并清空注册表(应用关闭时用)。 */
+    /** 卸载所有插件的所有运行实例,并清空注册表(应用关闭时用)。 */
     public synchronized void deleteAll() {
         List<PluginRuntime> runtimes = new ArrayList<>(internal.values());
         internal.clear();
@@ -74,7 +74,7 @@ public final class RegistryService {
     /**
      * 在 ctx 里启动一个插件(带上配置)。
      *
-     * @return 新建的 fiber;之后它的生命周期由依赖变化自动驱动
+     * @return 新建的运行实例;之后它的生命周期由依赖变化自动驱动
      */
     public Fiber plugin(Context ctx, Plugin plugin, Object config) {
         if (plugin == null) throw new CordisException(CordisException.Code.INVALID_PLUGIN, "plugin is null");

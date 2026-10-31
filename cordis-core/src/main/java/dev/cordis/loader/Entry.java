@@ -4,10 +4,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 一条声明式配置项:用数据描述“要装哪个插件、怎么装”,加载器负责照着办。
+ * 配置条目(entry):一条声明式的配置项,用数据描述“要装哪个插件、怎么装”,
+ * 加载器负责照着办。
  *
- * <p>一条 Entry 决定一个 fiber 的命运:id 是身份、url 选插件、config 给配置、
- * disabled 决定装不装、isolate/intercept 调整上下文。</p>
+ * <p>一条配置条目决定一个运行实例的命运:id 是身份、url 选插件、config 给配置、
+ * disabled 决定停不停用、isolate/intercept 调整上下文。</p>
  */
 public final class Entry {
 
@@ -15,13 +16,13 @@ public final class Entry {
     public final String id;
     /** 插件模块的地址(交给解析器解析)。 */
     public final String url;
-    /** 隔离声明:服务名 → TRUE(独享域)或共享标签(同名共用一个域)。 */
+    /** 隔离声明:服务名 → TRUE(独享域)或共享门牌(同名共用一个域)。 */
     public final Map<String, Object> isolate;
     /** 拦截声明:服务名 → 追加给该服务的配置。 */
     public final Map<String, Object> intercept;
     /** 传给插件的配置。 */
     public final Object config;
-    /** 是否被管理员关掉(条目保留,但不挂载)。 */
+    /** 是否被停用(条目保留,但不挂载)。 */
     public final boolean disabled;
 
     private Entry(Builder b) {
@@ -55,7 +56,7 @@ public final class Entry {
             return this;
         }
 
-        /** 加入具名的共享域:写了相同标签的 Entry 共用同一个域。 */
+        /** 加入具名的共享域:写了相同门牌的条目共用同一个域。 */
         public Builder isolateShared(String name, Object label) {
             isolate.put(name, label);
             return this;

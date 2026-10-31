@@ -5,23 +5,23 @@ import dev.cordis.core.runtime.Context;
 import java.util.List;
 
 /**
- * 效果体:ctx.effect(...) 和插件 apply 里要执行的回调。
+ * 效应回调(效果体):{@code ctx.effect(...)} 和插件 apply 里要执行的回调。
  *
  * <p>回调可以返回:</p>
  * <ul>
- *   <li>一个 {@link Disposable} —— 单阶段效果:返回“以后怎么撤销”;</li>
+ *   <li>一个 {@link Disposable} —— 单阶段效应:返回“以后怎么撤销”;</li>
  *   <li>{@code null} —— 没有需要撤销的东西;</li>
- *   <li>一组 Disposable(Iterable)—— 多阶段效果:每产生一个就登记一个;
- *       阶段之间是“检查点”,fiber 的目标变了可以在这里停下,只回滚已完成的部分。</li>
+ *   <li>一组 Disposable(Iterable)—— 多阶段效应:每产生一个就登记一个;
+ *       阶段之间是“检查点”,运行实例的目标视图变了可以在这里停下,只回滚已完成的部分。</li>
  * </ul>
  */
 @FunctionalInterface
 public interface EffectCallback {
 
     /**
-     * 执行效果体,返回“以后怎么撤销”。
+     * 执行效应回调,返回“以后怎么撤销”。
      *
-     * @param ctx 效果运行所在的上下文
+     * @param ctx 效应执行所在的上下文
      * @return Disposable、Iterable&lt;Disposable&gt;,或 null
      */
     Object execute(Context ctx);

@@ -33,12 +33,7 @@ public final class ReflectService {
 
     /** 取某服务名的默认共享域,没有就创建。 */
     public RealmKey globalRealm(String name) {
-        RealmKey key = globalRealms.get(name);
-        if (key == null) {
-            key = RealmKey.fresh(name);
-            globalRealms.put(name, key);
-        }
-        return key;
+        return globalRealms.computeIfAbsent(name, RealmKey::fresh);
     }
 
     /**

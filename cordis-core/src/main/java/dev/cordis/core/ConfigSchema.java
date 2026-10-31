@@ -2,6 +2,8 @@ package dev.cordis.core;
 
 /**
  * 配置校验器:插件启动前对原始配置做检查(和必要的转换)。
+ *
+ * <p>校验不通过抛 {@link ValidationException},插件保持旧配置继续运行。</p>
  */
 @FunctionalInterface
 public interface ConfigSchema<T> {

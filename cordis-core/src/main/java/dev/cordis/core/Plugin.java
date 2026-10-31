@@ -9,7 +9,7 @@ import java.util.List;
  *
  * <p>一个插件说清三件事:</p>
  * <ul>
- *   <li><b>需要什么</b> —— {@link #inject()},声明依赖的服务名;</li>
+ *   <li><b>需要什么</b> —— {@link #inject()},依赖声明(注入):需要哪些服务名;</li>
  *   <li><b>提供什么</b> —— 在 apply 里通过 ctx.provide 注册;</li>
  *   <li><b>做什么</b> —— {@link #apply()},启动时执行的逻辑。</li>
  * </ul>
@@ -22,7 +22,7 @@ public interface Plugin {
         return null;
     }
 
-    /** 声明依赖的服务名:全都可用时才会启动,缺一个就一直等。 */
+    /** 依赖声明(注入):需要的服务名;全都可用时才会启动,缺一个就一直待命。 */
     default List<String> inject() {
         return List.of();
     }
@@ -41,7 +41,7 @@ public interface Plugin {
      *
      * @param ctx    本实例运行所在的上下文
      * @param config 校验后的配置
-     * @return 需要撤销的效果,或 null
+     * @return 需要撤销的效应,或 null
      */
     Object apply(Context ctx, Object config);
 

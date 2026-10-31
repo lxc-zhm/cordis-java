@@ -6,7 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 同一个插件共用的一份运行时记录:该插件实例化出的所有 fiber 都登记在这里。
+ * 插件运行时记录:同一个插件共用的一份档案,该插件实例化出的
+ * 所有运行实例(fiber)都登记在这里。
  */
 public final class PluginRuntime {
 
@@ -14,7 +15,7 @@ public final class PluginRuntime {
     public final Plugin plugin;
     /** 插件显示名。 */
     public final String name;
-    /** 该插件当前存活的所有 fiber(每次实例化一个)。 */
+    /** 该插件当前存活的所有运行实例(fiber)(每次实例化一个)。 */
     public final List<Fiber> fibers = new ArrayList<>();
 
     PluginRuntime(Plugin plugin) {

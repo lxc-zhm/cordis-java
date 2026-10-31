@@ -18,19 +18,19 @@ import java.util.function.Predicate;
 /**
  * 上下文(ctx):组件与外界打交道的唯一通道。
  *
- * <p>组件的一切操作都经它:登记效果(effect)、提供/获取服务(provide/get)、
+ * <p>组件的一切操作都经它:登记效应(effect)、提供/获取服务(provide/get)、
  * 加载插件(plugin)。</p>
  *
  * <p>三种派生操作生成子上下文,且都不会改动父级:</p>
  * <ul>
- *   <li>{@link #extend} —— 普通子上下文;</li>
- *   <li>{@link #isolate} —— 让某服务名在子树里解析到独立的绑定(多租户);</li>
- *   <li>{@link #intercept} —— 给某服务追加一层配置(比如只读),不改提供者和消费者。</li>
+ *   <li>{@link #extend} —— 普通子上下文(派生);</li>
+ *   <li>{@link #isolate} —— 让某服务名在子树里解析到独立的绑定(隔离,多租户);</li>
+ *   <li>{@link #intercept} —— 给某服务追加一层配置(拦截,比如只读),不改提供者和消费者。</li>
  * </ul>
  *
  * <p>get 的规则(能力检查):沿 fiber 链找第一个“加载时拿到过该服务”的祖先;
- * 声明了但没加载 → INACTIVE_ACCESS 异常;压根没声明 → UNDECLARED_ACCESS 异常。
- * 也就是说:你能用什么服务,在声明 inject 的那一刻就定死了。</p>
+ * 声明了但没加载 → 未激活访问(INACTIVE_ACCESS)异常;压根没声明 → 未声明访问
+ * (UNDECLARED_ACCESS,越权)异常。也就是说:你能用什么服务,在声明 inject 的那一刻就定死了。</p>
  */
 public final class Context {
 
@@ -95,17 +95,17 @@ public final class Context {
     }
 
     /**
-     * 创建子上下文:服务解析先看自己、再看父级;子级装的东西会盖住父级同名的。
+     * 派生子上下文:服务解析先看自己、再看父级;子级装的东西会盖住父级同名的。
      */
     public Context extend() {
         return new Context(this);
     }
 
     /**
-     * 创建子上下文,并让 name 这个服务在子树里使用独立的绑定:
-     * 同名服务在不同 isolate 分支下互不影响(多租户、测试沙箱常用)。
+     * 派生子上下文,并让 name 这个服务在子树里使用独立的绑定:
+     * 同名服务在不同隔离域分支下互不影响(多租户、测试沙箱常用)。
      *
-     * @param label 隔离域标识:传相同的值(如相同字符串)表示共用同一个域;
+     * @param label 隔离域门牌:传相同的值(如相同字符串)表示共用同一个域;
      *              null 表示新建一个独享域
      */
     public Context isolate(String name, Object label) {
@@ -182,7 +182,7 @@ public final class Context {
     public <T> T get(String name) {
         Fiber f = fiber();
         if (f.runtime == null) {
-            // root access: lookup against the store without the inject requirement
+            // 根上下文访问:没有 inject 能力约束,直接按依赖快照查
             Impl impl = rootRef.reflect.getImpl(this, name, false);
             return impl == null ? null : (T) impl.value;
         }
@@ -244,7 +244,7 @@ public final class Context {
 
     // ------------------------------------------------------- effects & lifecycle
 
-    /** 登记一个可撤销的效果(详见 Fiber.effect)。 */
+    /** 登记一个可撤销的效应(详见 Fiber.effect)。 */
     public Disposable effect(EffectCallback callback) {
         return effect(callback, "anonymous");
     }

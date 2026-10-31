@@ -4,13 +4,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 效果的诊断信息:效果名 + 它内部嵌套登记的子效果,组成一棵树,方便排查问题。
+ * 效应元数据:效应名 + 它嵌套登记的子效应,组成一棵诊断树,方便排查问题。
  */
 public final class EffectMeta {
 
-    /** 效果的可读名字,例如 ctx.on("event") 或 ctx.provide("name")。 */
+    /** 效应的可读名字,例如 ctx.on("event") 或 ctx.provide("name")。 */
     public final String label;
-    /** 本效果执行期间嵌套登记的子效果。 */
+    /** 本效应执行期间嵌套登记的子效应。 */
     public final List<EffectMeta> children = new ArrayList<>();
 
     public EffectMeta(String label) {

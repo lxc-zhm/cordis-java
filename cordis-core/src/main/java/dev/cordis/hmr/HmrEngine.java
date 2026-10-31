@@ -14,17 +14,17 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 热替换(HMR)引擎:文件改了,把受影响的模块“原地换血”,进程不用重启。
+ * 热更新引擎(HMR,热模块替换):文件改了,把受影响的模块“原地换血”,进程不用重启。
  *
- * <p>为什么能这么做:每个 fiber 本来就圈住了自己组件的全部效果,
- * 所以换模块 = 卸旧 fiber + 挂新 fiber,效果自动回滚重放。
+ * <p>为什么能这么做:每个运行实例(fiber)本来就圈住了自己组件的全部效应,
+ * 所以换模块 = 卸旧运行实例 + 挂新运行实例,效应自动回滚重放。
  * 不需要像 webpack/vite 那样手写“接受边界”。</p>
  *
  * <p>三个阶段:</p>
  * <ol>
- *   <li>{@linkplain #classify 分类} —— 算出哪些模块要换、哪些不能换;</li>
+ *   <li>{@linkplain #classify 模块分类} —— 算出哪些模块可热换、哪些拒热换;</li>
  *   <li>{@linkplain #detectStale 陈旧检测} —— 找出引用了变更模块的插件;</li>
- *   <li>{@linkplain #reload 事务重载} —— 换失败就整体回滚,绝不停在半换状态。</li>
+ *   <li>{@linkplain #reload 事务性重载} —— 换失败就整体回滚,绝不停在半换状态。</li>
  * </ol>
  */
 public final class HmrEngine {
@@ -34,7 +34,7 @@ public final class HmrEngine {
     private HmrEngine() {
     }
 
-    /** 分类结果:accepted = 要热替换的模块;declined = 不能换的(改了只能整体重启)。 */
+    /** 分类结果:accepted = 可热换的模块;declined = 拒热换的模块(改了只能整体重启)。 */
     public record Classification(Set<String> accepted, Set<String> declined) {
     }
 
@@ -44,9 +44,9 @@ public final class HmrEngine {
     }
 
     /**
-     * 阶段 1:模块分类。从变更文件的引用出发反复推导,直到不再变化:
-     * 引用了“要换模块”的跟着换;引用到的全都不能换的自己也不能换;
-     * 因为循环引用一直定不下来的,一律按“不能换”处理(保守策略)。
+     * 阶段 1:模块分类。从变更文件的引用出发反复推导,直到不再变化(分类不动点):
+     * 引用了“可热换模块”的跟着可换;引用到的全是“拒热换”的自己也不能换;
+     * 因为循环引用一直定不下来的,一律按“拒热换”处理(保守策略)。
      */
     public static Classification classify(Set<String> stashed, Set<String> externals, ModuleGraph graph) {
         Set<String> accepted = new HashSet<>(stashed);
@@ -78,7 +78,7 @@ public final class HmrEngine {
         return new Classification(accepted, declined);
     }
 
-    /** 收集一个模块传递引用到的所有模块;declined 里的当作边界,不再往里走。 */
+    /** 收集一个模块传递引用到的所有模块;拒热换(declined)的当作边界,不再往里走。 */
     public static Set<String> dependencies(String root, Set<String> declined, ModuleGraph graph) {
         Set<String> deps = new LinkedHashSet<>();
         traverse(root, deps, declined, graph);
@@ -92,11 +92,11 @@ public final class HmrEngine {
     }
 
     /**
-     * 阶段 2:陈旧检测。一个插件只要依赖树里出现过“要换的模块”,就算陈旧,
+     * 阶段 2:陈旧检测。一个插件只要依赖树里出现过“可热换的模块”,就算陈旧,
      * 需要重装;树里其余陈旧模块一并作废。
      *
-     * @param entryUrls 所有已挂载 entry 的 url
-     * @return 陈旧 entry 的 url 集合
+     * @param entryUrls 所有已挂载配置条目的 url
+     * @return 陈旧配置条目的 url 集合
      */
     public static Set<String> detectStale(Collection<String> entryUrls, Set<String> accepted,
                                           Set<String> declined, ModuleGraph graph) {
@@ -113,12 +113,12 @@ public final class HmrEngine {
     }
 
     /**
-     * 阶段 3:事务性重载。逐个“卸旧 fiber、装新模块”;
+     * 阶段 3:事务性重载。逐个“卸旧运行实例、装新模块”;
      * 中途任何一个失败,就把已经换过的全部从旧组件重建回去,再把错误抛出——
      * 保证系统绝不会停在“换了一半”的状态。
      *
-     * @param loader      管理这些 entry 的加载器
-     * @param staleIds    要重载的 entry id
+     * @param loader      管理这些配置条目的加载器
+     * @param staleIds    要重载的配置条目 id
      * @param fresh       url → 新编译的插件;缺省(或没有对应 url)就重新走解析器
      * @param backupStore 可选,接收每个 id 换下来的旧插件(备份)
      */
@@ -161,7 +161,7 @@ public final class HmrEngine {
         return out;
     }
 
-    /** 辅助方法:把陈旧的 url 对应回 loader 里的 entry id。 */
+    /** 辅助方法:把陈旧的 url 对应回加载器里的配置条目 id。 */
     public static List<String> idsForUrls(ComponentLoader loader, Set<String> staleUrls) {
         List<String> ids = new ArrayList<>();
         for (String id : loader.ids()) {

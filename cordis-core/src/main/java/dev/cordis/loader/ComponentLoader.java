@@ -14,20 +14,20 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 声明式加载器:用一列 {@link Entry} 描述“想要装什么”,它负责对着清单干活,
- * 清单变化时做增量调整(而不是全部推倒重来)。
+ * 组件加载器(声明式):用一列配置条目({@link Entry})描述“想要装什么”,
+ * 它负责对着清单干活,清单变化时做增量调整(而不是全部推倒重来)。
  *
- * <p>调和按 id 差分:消失的卸载、新增的挂载、存活的按“哪个字段变了”选最小动作。
+ * <p>调和(reconcile)按 id 差分:消失的卸载、新增的挂载、存活的按“哪个字段变了”选最小动作。
  * 为什么可以这么省事?框架保证:无论中途怎么装怎么卸,最终停下来时的状态
  * 和“从头按最终配置装一遍”完全一致(论文 Theorem 80)。</p>
  */
 public final class ComponentLoader {
 
-    /** 一条已挂载的 Entry:配置记录、实际 fiber、插件、派生上下文。 */
+    /** 一条已挂载记录:配置条目、运行实例(fiber)、插件、派生上下文。 */
     public static final class Mounted {
         public final Entry entry;
-        public final Fiber fiber;   // null while disabled or failed
-        public final Plugin plugin; // null while disabled
+        public final Fiber fiber;   // 停用或启动失败时为 null
+        public final Plugin plugin; // 停用时为 null
         public final Context ctx;
 
         Mounted(Entry entry, Fiber fiber, Plugin plugin, Context ctx) {
@@ -53,7 +53,7 @@ public final class ComponentLoader {
         this.log = parent.logger("loader");
     }
 
-    /** The mounted record for {@code id}, or null. */
+    /** 查某个 id 的已挂载记录,没有返回 null。 */
     public synchronized Mounted mounted(String id) {
         return mounted.get(id);
     }
@@ -70,7 +70,7 @@ public final class ComponentLoader {
 
     /**
      * 把运行中的系统调和成 desired 这份清单:被移除的卸载,存活的按字段更新,
-     * 新增的按顺序挂载。不用关心先后顺序——依赖没就绪的插件会自动等待。
+     * 新增的按顺序挂载。不用关心先后顺序——依赖没就绪的插件会自动待命等待。
      */
     public synchronized void reconcile(List<Entry> desired) {
         Set<String> seen = new java.util.HashSet<>();
@@ -93,9 +93,9 @@ public final class ComponentLoader {
             }
             return;
         }
-        // per-field dispatch on the least disruptive operation
+        // 逐字段分发:按哪个字段变了,选最小扰动的动作
         if (!Objects.equals(m.entry.url, e.url)) {
-            rebuild(e, null); // identity/component changed
+            rebuild(e, null); // 身份/组件变了(换了模块)
             return;
         }
         if (m.entry.disabled != e.disabled) {
@@ -104,16 +104,16 @@ public final class ComponentLoader {
                 if (m.fiber != null) m.fiber.dispose();
                 mounted.put(e.id, new Mounted(e, null, null, m.ctx));
             } else {
-                rebuild(e, null); // re-enable: instantiate a fresh fiber at the same name
+                rebuild(e, null); // 重新启用:在同一个 id 下新建一个运行实例
             }
             return;
         }
         if (!Objects.equals(m.entry.isolate, e.isolate)) {
-            rebuild(e, m.plugin); // realm reassignment (Algorithm 7 via Theorem 80)
+            rebuild(e, m.plugin); // 隔离域重新指派(算法 7,由定理 80 保证)
             return;
         }
         if (!Objects.equals(m.entry.intercept, e.intercept)) {
-            rebuild(e, m.plugin); // interception lives on the derived context
+            rebuild(e, m.plugin); // 拦截配置挂在派生上下文上,需要重建
             return;
         }
         if (!Objects.equals(m.entry.config, e.config)) {
@@ -123,7 +123,7 @@ public final class ComponentLoader {
                 try {
                     m.fiber.update(e.config);
                 } catch (RuntimeException error) {
-                    // invalid config: the fiber reports FAILED; the record keeps the new payload
+                    // 配置不合法:该运行实例进入 FAILED,已挂载记录保留新配置
                     log.error("entry " + e.id + " rejected new config: {}", error);
                 }
             }
@@ -173,7 +173,7 @@ public final class ComponentLoader {
             if (i.getValue() instanceof RealmKey rk) {
                 key = rk;
             } else if (Boolean.TRUE.equals(i.getValue())) {
-                key = RealmKey.fresh(i.getKey() + "#" + e.id); // local realm travels with the entry
+                key = RealmKey.fresh(i.getKey() + "#" + e.id); // 独享域跟随这条配置条目走
             } else {
                 key = RealmKey.shared(i.getValue());
             }

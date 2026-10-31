@@ -1,4 +1,6 @@
-package dev.cordis.core;
+package dev.cordis.core.runtime;
+
+import dev.cordis.core.effect.Disposable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -118,6 +120,7 @@ public final class EventsService {
      * 每个监听器都会额外收到一个 next,调用 next 才会继续走后面的流程,
      * 不调用就等于否决(可用于拦截)。
      */
+    @SuppressWarnings("unchecked")
     public Object waterfall(Context thisArg, String name, Object... argsWithNext) {
         List<Listener> cbs = new ArrayList<>(dispatch(thisArg, name));
         Object[] args = Arrays.copyOf(argsWithNext, argsWithNext.length - 1);

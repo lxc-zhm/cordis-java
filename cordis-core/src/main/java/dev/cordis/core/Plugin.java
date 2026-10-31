@@ -1,7 +1,8 @@
 package dev.cordis.core;
 
+import dev.cordis.core.runtime.Context;
+
 import java.util.List;
-import java.util.Map;
 
 /**
  * 插件:cordis 里的“组件”。

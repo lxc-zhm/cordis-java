@@ -1,7 +1,7 @@
 package dev.cordis.example.plugins;
 
-import dev.cordis.core.Context;
-import dev.cordis.core.Service;
+import dev.cordis.core.runtime.Context;
+import dev.cordis.core.coeffect.Service;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

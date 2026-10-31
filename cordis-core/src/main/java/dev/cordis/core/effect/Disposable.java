@@ -1,4 +1,4 @@
-package dev.cordis.core;
+package dev.cordis.core.effect;
 
 /**
  * 一个“撤销动作”:描述之前做的某件事怎么被收回。

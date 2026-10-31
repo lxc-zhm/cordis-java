@@ -1,4 +1,4 @@
-package dev.cordis.core;
+package dev.cordis.core.runtime;
 
 import java.util.HashMap;
 import java.util.List;

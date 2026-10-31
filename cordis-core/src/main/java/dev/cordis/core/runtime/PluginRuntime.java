@@ -1,4 +1,6 @@
-package dev.cordis.core;
+package dev.cordis.core.runtime;
+
+import dev.cordis.core.Plugin;
 
 import java.util.ArrayList;
 import java.util.List;

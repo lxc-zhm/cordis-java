@@ -106,13 +106,13 @@ class HmrTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 loads.incrementAndGet();
                 return null;
             }
         });
 
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         ComponentLoader loader = new ComponentLoader(root, url -> modules.get(url).get());
         loader.load(List.of(
                 Entry.of("greeting", "greeting").build(),

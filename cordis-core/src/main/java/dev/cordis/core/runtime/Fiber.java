@@ -1,9 +1,18 @@
-package dev.cordis.core;
+package dev.cordis.core.runtime;
+
+import dev.cordis.core.CordisException;
+import dev.cordis.core.ConfigSchema;
+import dev.cordis.core.Plugin;
+import dev.cordis.core.coeffect.Impl;
+import dev.cordis.core.coeffect.ReflectService;
+import dev.cordis.core.coeffect.RealmKey;
+import dev.cordis.core.effect.Disposable;
+import dev.cordis.core.effect.EffectCallback;
+import dev.cordis.core.effect.EffectMeta;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -176,13 +185,14 @@ public final class Fiber {
         metaStack.push(meta);
         try {
             Object result = callback.execute(ctx);
-            collectResult(result, local, armed[0] ? () -> armed[0] : () -> false);
+            collectResult(result, local, () -> armed[0]);
         } catch (Throwable t) {
             runReverse(local); // rollback partial effects
             throw t;
         } finally {
             metaStack.pop();
         }
+
         EffectRecord[] self = new EffectRecord[1];
         Disposable wrapper = () -> {
             if (!armed[0]) return;
@@ -196,23 +206,27 @@ public final class Fiber {
     }
 
     private static void collectResult(Object result, List<Disposable> sink, BooleanSupplier guard) {
-        if (result == null) return;
-        if (result instanceof Disposable d) {
-            sink.add(d);
-            return;
-        }
-        if (result instanceof Iterable<?> it) {
-            Iterator<?> iter = it.iterator();
-            while (iter.hasNext()) {
-                if (!guard.getAsBoolean()) break;
-                Object o = iter.next();
-                if (o == null) continue;
-                if (!(o instanceof Disposable d)) {
-                    throw new IllegalArgumentException("Invalid effect: expected Disposable, got " + o.getClass());
-                }
-                sink.add(d);
+        switch (result) {
+            case null -> {
+                return;
             }
-            return;
+            case Disposable d -> {
+                sink.add(d);
+                return;
+            }
+            case Iterable<?> it -> {
+                for (Object object : it) {
+                    if (!guard.getAsBoolean()) break;
+                    if (object == null) continue;
+                    if (!(object instanceof Disposable d)) {
+                        throw new IllegalArgumentException("Invalid effect: expected Disposable, got " + object.getClass());
+                    }
+                    sink.add(d);
+                }
+                return;
+            }
+            default -> {
+            }
         }
         throw new IllegalArgumentException("Invalid effect: " + result.getClass());
     }
@@ -233,7 +247,7 @@ public final class Fiber {
     // ------------------------------------------------------- dependency tracking
 
     /** 重新核对一个声明的依赖:提供者还 ACTIVE 且检查通过,才记入待用表。 */
-    void checkImpl(String name) {
+    public void checkImpl(String name) {
         Impl impl = ctx.getRoot().reflect().getImpl(ctx, name, true);
         if (impl == null) {
             pendingStore.remove(name);
@@ -369,8 +383,8 @@ public final class Fiber {
         // only notify changes between ACTIVE and NON-ACTIVE states
         if ((old == FiberState.ACTIVE) == (next == FiberState.ACTIVE)) return;
         List<String> names = new ArrayList<>();
-        for (Impl impl : List.copyOf(ctx.getRoot().reflect().store.values())) {
-            if (impl.fiber == this) names.add(impl.name);
+        for (Impl impl : ctx.getRoot().reflect().bindingsOf(this)) {
+            names.add(impl.name);
         }
         if (!names.isEmpty()) ctx.getRoot().reflect().notify(ctx, names);
     }
@@ -456,17 +470,17 @@ public final class Fiber {
         return effect(cb -> {
             reflect.globalRealm(name); // ensure a default realm exists for global resolvers
             RealmKey key = from.resolveRealm(name);
-            Impl existing = reflect.store.get(key);
+            Impl existing = reflect.bindingAt(key);
             if (existing != null) {
                 throw new CordisException(CordisException.Code.DUPLICATE_PROVIDE,
                         "service \"" + name + "\" has been registered at <" + existing.fiber.name() + ">");
             }
             Impl impl = new Impl(name, this, value, check);
-            reflect.store.put(key, impl);
+            reflect.bind(key, impl);
             if (store != null) store.put(name, impl);
             if (state == FiberState.ACTIVE) reflect.notify(from, List.of(name));
             return (Disposable) () -> {
-                reflect.store.remove(key);
+                reflect.unbind(key);
                 reflect.notify(from, List.of(name));
                 if (store != null) store.remove(name);
             };

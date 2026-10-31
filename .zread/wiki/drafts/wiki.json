@@ -1,0 +1,243 @@
+{
+  "id": "2026-10-31-132117",
+  "generated_at": "2026-10-31T05:21:17.791469Z",
+  "language": "zh",
+  "pages": [
+    {
+      "slug": "1-xiang-mu-gai-lan-shi-kong-ke-zu-he-xing-yuan-kuang-jia-de-java-25-shi-xian",
+      "title": "项目概览：时空可组合性元框架的 Java 25 实现",
+      "file": "1-xiang-mu-gai-lan-shi-kong-ke-zu-he-xing-yuan-kuang-jia-de-java-25-shi-xian.md",
+      "section": "入门指南",
+      "level": "Beginner"
+    },
+    {
+      "slug": "2-kuai-su-kai-shi-huan-jing-da-jian-maven-gou-jian-yu-yun-xing-duan-dao-duan-yan-shi",
+      "title": "快速开始：环境搭建、Maven 构建与运行端到端演示",
+      "file": "2-kuai-su-kai-shi-huan-jing-da-jian-maven-gou-jian-yu-yun-xing-duan-dao-duan-yan-shi.md",
+      "section": "入门指南",
+      "level": "Beginner"
+    },
+    {
+      "slug": "3-yan-shi-cheng-xu-zou-du-ba-ge-chang-jing-fu-gai-kuang-jia-quan-bu-neng-li",
+      "title": "演示程序走读：八个场景覆盖框架全部能力",
+      "file": "3-yan-shi-cheng-xu-zou-du-ba-ge-chang-jing-fu-gai-kuang-jia-quan-bu-neng-li.md",
+      "section": "入门指南",
+      "level": "Beginner"
+    },
+    {
+      "slug": "4-bian-xie-di-ge-cha-jian-inject-sheng-ming-provide-ti-gong-yu-zi-dong-hui-gun",
+      "title": "编写第一个插件：inject 声明、provide 提供与自动回滚",
+      "file": "4-bian-xie-di-ge-cha-jian-inject-sheng-ming-provide-ti-gong-yu-zi-dong-hui-gun.md",
+      "section": "入门指南",
+      "level": "Beginner"
+    },
+    {
+      "slug": "5-shi-kong-ke-zu-he-xing-fan-shi-ke-hui-tui-xiao-ying-yu-xiang-ying-shi-yu-xiao-ying-de-tong",
+      "title": "时空可组合性范式：可回退效应与响应式余效应的统一",
+      "file": "5-shi-kong-ke-zu-he-xing-fan-shi-ke-hui-tui-xiao-ying-yu-xiang-ying-shi-yu-xiao-ying-de-tong.md",
+      "section": "深入解析",
+      "group": "理论基础与设计取舍",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "6-yu-cordis-typescript-ban-de-yu-yi-ying-she-yu-tong-bu-hua-she-ji-qu-she",
+      "title": "与 cordis（TypeScript 版）的语义映射与同步化设计取舍",
+      "file": "6-yu-cordis-typescript-ban-de-yu-yi-ying-she-yu-tong-bu-hua-she-ji-qu-she.md",
+      "section": "深入解析",
+      "group": "理论基础与设计取舍",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "7-disposable-ni-bian-huan-lifo-zhe-die-shi-bai-hui-gun-yu-dan-ci-chu-zhi",
+      "title": "Disposable 逆变换：LIFO 折叠、失败回滚与单次处置",
+      "file": "7-disposable-ni-bian-huan-lifo-zhe-die-shi-bai-hui-gun-yu-dan-ci-chu-zhi.md",
+      "section": "深入解析",
+      "group": "时间可组合性：可回退效应",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "8-duo-jie-duan-xiao-ying-duo-xing-iterable-jian-cha-dian-zhong-duan-yu-bu-fen-hui-gun",
+      "title": "多阶段效应：惰性 Iterable、检查点中断与部分回滚",
+      "file": "8-duo-jie-duan-xiao-ying-duo-xing-iterable-jian-cha-dian-zhong-duan-yu-bu-fen-hui-gun.md",
+      "section": "深入解析",
+      "group": "时间可组合性：可回退效应",
+      "level": "Advanced"
+    },
+    {
+      "slug": "9-inject-neng-li-jian-cha-undeclared_access-yu-inactive_access-de-fang-wen-gui-ze",
+      "title": "inject 能力检查：UNDECLARED_ACCESS 与 INACTIVE_ACCESS 的访问规则",
+      "file": "9-inject-neng-li-jian-cha-undeclared_access-yu-inactive_access-de-fang-wen-gui-ze.md",
+      "section": "深入解析",
+      "group": "空间可组合性：响应式余效应",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "10-reflectservice-fu-wu-cang-ku-yu-notify-bian-geng-yan-bo-ji-zhi",
+      "title": "ReflectService 服务仓库与 notify 变更广播机制",
+      "file": "10-reflectservice-fu-wu-cang-ku-yu-notify-bian-geng-yan-bo-ji-zhi.md",
+      "section": "深入解析",
+      "group": "空间可组合性：响应式余效应",
+      "level": "Advanced"
+    },
+    {
+      "slug": "11-realmkey-ge-chi-yu-duo-zu-hu-ge-chi-yu-gong-xiang-biao-qian-join",
+      "title": "RealmKey 隔离域：多租户隔离与共享标签 Join",
+      "file": "11-realmkey-ge-chi-yu-duo-zu-hu-ge-chi-yu-gong-xiang-biao-qian-join.md",
+      "section": "深入解析",
+      "group": "空间可组合性：响应式余效应",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "12-intercept-lan-jie-pei-zhi-zhu-ceng-he-bing-yu-quan-xian-shou-suo",
+      "title": "intercept 拦截：配置逐层合并与权限收缩",
+      "file": "12-intercept-lan-jie-pei-zhi-zhu-ceng-he-bing-yu-quan-xian-shou-suo.md",
+      "section": "深入解析",
+      "group": "空间可组合性：响应式余效应",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "13-service-fu-wu-ji-lei-gou-zao-ji-provide-ke-yong-xing-jian-cha-yu-zi-dong-zhu-xiao",
+      "title": "Service 服务基类：构造即 provide、可用性检查与自动注销",
+      "file": "13-service-fu-wu-ji-lei-gou-zao-ji-provide-ke-yong-xing-jian-cha-yu-zi-dong-zhu-xiao.md",
+      "section": "深入解析",
+      "group": "空间可组合性：响应式余效应",
+      "level": "Beginner"
+    },
+    {
+      "slug": "14-context-shang-xia-wen-fan-shi-parent-lian-extend-isolate-intercept-pai-sheng",
+      "title": "Context 上下文范式：parent 链、extend/isolate/intercept 派生",
+      "file": "14-context-shang-xia-wen-fan-shi-parent-lian-extend-isolate-intercept-pai-sheng.md",
+      "section": "深入解析",
+      "group": "运行时内核",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "15-fiber-sheng-ming-zhou-qi-zhuang-tai-ji-liu-tai-liu-zhuan-yu-duo-xing-lian-shi-zhuan-huan",
+      "title": "Fiber 生命周期状态机：六态流转与惰性链式转换",
+      "file": "15-fiber-sheng-ming-zhou-qi-zhuang-tai-ji-liu-tai-liu-zhuan-yu-duo-xing-lian-shi-zhuan-huan.md",
+      "section": "深入解析",
+      "group": "运行时内核",
+      "level": "Advanced"
+    },
+    {
+      "slug": "16-epoch-yu-target-shi-tu-ti-gong-zhe-zhai-yao-qu-dong-de-zhong-zai-pan-ding",
+      "title": "epoch 与 target 视图：提供者摘要驱动的重载判定",
+      "file": "16-epoch-yu-target-shi-tu-ti-gong-zhe-zhai-yao-qu-dong-de-zhong-zai-pan-ding.md",
+      "section": "深入解析",
+      "group": "运行时内核",
+      "level": "Advanced"
+    },
+    {
+      "slug": "17-o-insert-yu-o-retire-plugin-gua-zai-ji-shi-li-hua-yuan-yu",
+      "title": "O-Insert 与 O-Retire：plugin() 挂载即实例化原语",
+      "file": "17-o-insert-yu-o-retire-plugin-gua-zai-ji-shi-li-hua-yuan-yu.md",
+      "section": "深入解析",
+      "group": "运行时内核",
+      "level": "Advanced"
+    },
+    {
+      "slug": "18-xie-zai-shun-xu-bao-zheng-xiao-fei-zhe-xian-yu-ti-gong-zhe-de-l-unload-guard",
+      "title": "卸载顺序保证：消费者先于提供者的 L-Unload guard",
+      "file": "18-xie-zai-shun-xu-bao-zheng-xiao-fei-zhe-xian-yu-ti-gong-zhe-de-l-unload-guard.md",
+      "section": "深入解析",
+      "group": "运行时内核",
+      "level": "Advanced"
+    },
+    {
+      "slug": "19-eventsservice-shi-jian-zong-xian-emit-parallel-bail-yu-waterfall-si-chong-pai-fa-yu-yi",
+      "title": "EventsService 事件总线：emit、parallel、bail 与 waterfall 四种派发语义",
+      "file": "19-eventsservice-shi-jian-zong-xian-emit-parallel-bail-yu-waterfall-si-chong-pai-fa-yu-yi.md",
+      "section": "深入解析",
+      "group": "运行时内核",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "20-nei-bu-shi-jian-xie-yi-internal-status-internal-plugin-internal-service-yu-internal-config",
+      "title": "内部事件协议：internal/status、internal/plugin、internal/service 与 internal/config",
+      "file": "20-nei-bu-shi-jian-xie-yi-internal-status-internal-plugin-internal-service-yu-internal-config.md",
+      "section": "深入解析",
+      "group": "运行时内核",
+      "level": "Advanced"
+    },
+    {
+      "slug": "21-entry-pei-zhi-mo-xing-id-url-isolate-intercept-config-yu-disabled",
+      "title": "Entry 配置模型：id、url、isolate、intercept、config 与 disabled",
+      "file": "21-entry-pei-zhi-mo-xing-id-url-isolate-intercept-config-yu-disabled.md",
+      "section": "深入解析",
+      "group": "声明式加载器",
+      "level": "Beginner"
+    },
+    {
+      "slug": "22-componentloader-an-id-diao-he-zhu-zi-duan-zui-xiao-rao-dong-fen-fa",
+      "title": "ComponentLoader 按 id 调和：逐字段最小扰动分发",
+      "file": "22-componentloader-an-id-diao-he-zhu-zi-duan-zui-xiao-rao-dong-fen-fa.md",
+      "section": "深入解析",
+      "group": "声明式加载器",
+      "level": "Advanced"
+    },
+    {
+      "slug": "23-diao-he-zheng-que-xing-theorem-80-yu-shou-lian-bao-zheng",
+      "title": "调和正确性：Theorem 80 与收敛保证",
+      "file": "23-diao-he-zheng-que-xing-theorem-80-yu-shou-lian-bao-zheng.md",
+      "section": "深入解析",
+      "group": "声明式加载器",
+      "level": "Advanced"
+    },
+    {
+      "slug": "24-pluginresolver-jvm-huan-jing-xia-su-zhu-zi-ding-yi-de-mo-kuai-jie-xi-bian-jie",
+      "title": "PluginResolver：JVM 环境下宿主自定义的模块解析边界",
+      "file": "24-pluginresolver-jvm-huan-jing-xia-su-zhu-zi-ding-yi-de-mo-kuai-jie-xi-bian-jie.md",
+      "section": "深入解析",
+      "group": "声明式加载器",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "25-hmr-zong-lan-san-jie-duan-liu-shui-xian-yu-modulegraph-mo-kuai-tu-chou-xiang",
+      "title": "HMR 总览：三阶段流水线与 ModuleGraph 模块图抽象",
+      "file": "25-hmr-zong-lan-san-jie-duan-liu-shui-xian-yu-modulegraph-mo-kuai-tu-chou-xiang.md",
+      "section": "深入解析",
+      "group": "热模块替换（HMR）",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "26-mo-kuai-fen-lei-bu-dong-dian-accepted-declined-pan-ding-yu-xun-huan-yin-yong-bao-shou-ju-jue",
+      "title": "模块分类不动点：accepted/declined 判定与循环引用保守拒绝",
+      "file": "26-mo-kuai-fen-lei-bu-dong-dian-accepted-declined-pan-ding-yu-xun-huan-yin-yong-bao-shou-ju-jue.md",
+      "section": "深入解析",
+      "group": "热模块替换（HMR）",
+      "level": "Advanced"
+    },
+    {
+      "slug": "27-chen-jiu-entry-jian-ce-yu-shi-wu-xing-zhong-zai-de-shi-bai-hui-gun",
+      "title": "陈旧 entry 检测与事务性重载的失败回滚",
+      "file": "27-chen-jiu-entry-jian-ce-yu-shi-wu-xing-zhong-zai-de-shi-bai-hui-gun.md",
+      "section": "深入解析",
+      "group": "热模块替换（HMR）",
+      "level": "Advanced"
+    },
+    {
+      "slug": "28-pei-zhi-xi-tong-configschema-xiao-yan-validationexception-yu-update-liu-cheng",
+      "title": "配置系统：ConfigSchema 校验、ValidationException 与 update 流程",
+      "file": "28-pei-zhi-xi-tong-configschema-xiao-yan-validationexception-yu-update-liu-cheng.md",
+      "section": "深入解析",
+      "group": "工程化与质量保障",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "29-cuo-wu-ti-xi-yu-zhen-duan-cuo-wu-ma-qing-dan-effectmeta-xiao-guo-shu-yu-ri-zhi-men-mian",
+      "title": "错误体系与诊断：错误码清单、EffectMeta 效果树与日志门面",
+      "file": "29-cuo-wu-ti-xi-yu-zhen-duan-cuo-wu-ma-qing-dan-effectmeta-xiao-guo-shu-yu-ri-zhi-men-mian.md",
+      "section": "深入解析",
+      "group": "工程化与质量保障",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "30-ce-shi-ti-xi-30-ge-yong-li-fu-gai-de-xing-wei-qi-yue-qing-dan",
+      "title": "测试体系：30 个用例覆盖的行为契约清单",
+      "file": "30-ce-shi-ti-xi-30-ge-yong-li-fu-gai-de-xing-wei-qi-yue-qing-dan.md",
+      "section": "深入解析",
+      "group": "工程化与质量保障",
+      "level": "Intermediate"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-package dev.cordis.core;
+package dev.cordis.core.coeffect;
 
 /**
  * 隔离域(realm)的“门牌号”。

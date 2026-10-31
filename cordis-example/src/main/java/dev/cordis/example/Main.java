@@ -1,11 +1,10 @@
 package dev.cordis.example;
 
-import dev.cordis.core.Context;
-import dev.cordis.core.Fiber;
-import dev.cordis.core.FiberState;
-import dev.cordis.core.Logger;
+import dev.cordis.core.runtime.Context;
+import dev.cordis.core.runtime.Fiber;
+import dev.cordis.core.runtime.FiberState;
 import dev.cordis.core.Plugin;
-import dev.cordis.core.PluginRuntime;
+import dev.cordis.core.runtime.PluginRuntime;
 import dev.cordis.hmr.HmrEngine;
 import dev.cordis.hmr.ModuleGraph;
 import dev.cordis.loader.ComponentLoader;

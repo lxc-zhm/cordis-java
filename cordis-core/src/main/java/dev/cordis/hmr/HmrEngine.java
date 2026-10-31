@@ -1,10 +1,8 @@
 package dev.cordis.hmr;
 
-import dev.cordis.core.Logger;
+import dev.cordis.core.runtime.Logger;
 import dev.cordis.core.Plugin;
 import dev.cordis.loader.ComponentLoader;
-import dev.cordis.loader.PluginResolver;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -42,7 +40,7 @@ public final class HmrEngine {
 
     /** 简单的控制台日志器(引擎是静态工具类;宿主可自行包装)。 */
     private static final class LoggerServiceHolder {
-        final Logger logger = new dev.cordis.core.LoggerService().logger("hmr");
+        final Logger logger = new dev.cordis.core.runtime.LoggerService().logger("hmr");
     }
 
     /**

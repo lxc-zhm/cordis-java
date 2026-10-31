@@ -1,9 +1,9 @@
 package dev.cordis;
 
-import dev.cordis.core.Fiber;
-import dev.cordis.core.FiberState;
+import dev.cordis.core.runtime.Fiber;
+import dev.cordis.core.runtime.FiberState;
 import dev.cordis.core.Plugin;
-import dev.cordis.core.RealmKey;
+import dev.cordis.core.coeffect.RealmKey;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -28,7 +28,7 @@ class IsolationTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 log.add("see:" + ctx.get("svc"));
                 return null;
             }
@@ -37,9 +37,9 @@ class IsolationTest {
 
     @Test
     void isolatedScopesResolveIndependently() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
-        dev.cordis.core.Context a = root.isolate("svc", "scope-a");
-        dev.cordis.core.Context b = root.isolate("svc", "scope-b");
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
+        dev.cordis.core.runtime.Context a = root.isolate("svc", "scope-a");
+        dev.cordis.core.runtime.Context b = root.isolate("svc", "scope-b");
         a.plugin(provider("A")).await();
         b.plugin(provider("B")).await();
         root.plugin(provider("root")).await();
@@ -50,11 +50,11 @@ class IsolationTest {
 
     @Test
     void notifyDoesNotCrossRealms() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         List<String> logA = new java.util.ArrayList<>();
         List<String> logB = new java.util.ArrayList<>();
-        dev.cordis.core.Context a = root.isolate("svc", "scope-a");
-        dev.cordis.core.Context b = root.isolate("svc", "scope-b");
+        dev.cordis.core.runtime.Context a = root.isolate("svc", "scope-a");
+        dev.cordis.core.runtime.Context b = root.isolate("svc", "scope-b");
         a.plugin(consumer(logA));
         b.plugin(consumer(logB));
         assertEquals(List.of(), logA);
@@ -71,9 +71,9 @@ class IsolationTest {
 
     @Test
     void defaultIsolateCreatesFreshScopes() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
-        dev.cordis.core.Context a = root.isolate("svc");
-        dev.cordis.core.Context b = root.isolate("svc");
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
+        dev.cordis.core.runtime.Context a = root.isolate("svc");
+        dev.cordis.core.runtime.Context b = root.isolate("svc");
         a.plugin(provider("A")).await();
         b.plugin(provider("B")).await();
         assertEquals("A", a.get("svc"));
@@ -83,10 +83,10 @@ class IsolationTest {
 
     @Test
     void sameLabelJoinsScopes() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         RealmKey joined = RealmKey.shared("tenant-1");
-        dev.cordis.core.Context a = root.isolate("svc", joined);
-        dev.cordis.core.Context b = root.isolate("svc", joined);
+        dev.cordis.core.runtime.Context a = root.isolate("svc", joined);
+        dev.cordis.core.runtime.Context b = root.isolate("svc", joined);
         // a and b share the realm: one provider satisfies both
         b.plugin(provider("shared")).await();
         Fiber consumer = a.plugin(consumer(new java.util.ArrayList<>()));
@@ -96,9 +96,9 @@ class IsolationTest {
 
     @Test
     void interceptMergesWithDescendantsWinning() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
-        dev.cordis.core.Context middle = root.intercept("svc", java.util.Map.of("a", 1, "b", 1));
-        dev.cordis.core.Context leaf = middle.intercept("svc", java.util.Map.of("b", 2));
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
+        dev.cordis.core.runtime.Context middle = root.intercept("svc", java.util.Map.of("a", 1, "b", 1));
+        dev.cordis.core.runtime.Context leaf = middle.intercept("svc", java.util.Map.of("b", 2));
         assertEquals(java.util.Map.of("a", 1, "b", 2), leaf.resolveIntercept("svc"));
         assertNull(root.resolveIntercept("svc"));
     }

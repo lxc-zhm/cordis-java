@@ -1,7 +1,7 @@
 package dev.cordis.example.plugins;
 
-import dev.cordis.core.Context;
-import dev.cordis.core.Logger;
+import dev.cordis.core.runtime.Context;
+import dev.cordis.core.runtime.Logger;
 import dev.cordis.core.Plugin;
 
 /**
@@ -24,12 +24,12 @@ public class DatabasePlugin implements Plugin {
 
         ctx.effect(cb -> {
             log.info("  [连接] 已建立");
-            return (dev.cordis.core.Disposable) () -> log.info("  [连接] 已释放");
+            return (dev.cordis.core.effect.Disposable) () -> log.info("  [连接] 已释放");
         }, "open-connection");
 
         ctx.effect(cb -> {
             log.info("  [语句] 已预编译");
-            return (dev.cordis.core.Disposable) () -> log.info("  [语句] 已关闭");
+            return (dev.cordis.core.effect.Disposable) () -> log.info("  [语句] 已关闭");
         }, "prepare-statements");
 
         DbService db = new DbService(ctx);

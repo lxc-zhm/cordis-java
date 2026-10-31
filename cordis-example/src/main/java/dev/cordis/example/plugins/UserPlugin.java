@@ -1,7 +1,7 @@
 package dev.cordis.example.plugins;
 
-import dev.cordis.core.Context;
-import dev.cordis.core.Logger;
+import dev.cordis.core.runtime.Context;
+import dev.cordis.core.runtime.Logger;
 import dev.cordis.core.Plugin;
 
 import java.util.List;

@@ -1,7 +1,7 @@
 package dev.cordis.example.plugins;
 
-import dev.cordis.core.Context;
-import dev.cordis.core.Logger;
+import dev.cordis.core.runtime.Context;
+import dev.cordis.core.runtime.Logger;
 import dev.cordis.core.Plugin;
 
 /**
@@ -23,7 +23,7 @@ public class GreetingPluginV1 implements Plugin {
 
         ctx.effect(cb -> {
             log.info("  [greeting 定时器 v1] 已启动");
-            return (dev.cordis.core.Disposable) () -> log.info("  [greeting 定时器 v1] 已停止");
+            return (dev.cordis.core.effect.Disposable) () -> log.info("  [greeting 定时器 v1] 已停止");
         }, "greeting-timer");
         return null;
     }

@@ -1,7 +1,7 @@
 package dev.cordis;
 
 import dev.cordis.core.CordisException;
-import dev.cordis.core.Fiber;
+import dev.cordis.core.runtime.Fiber;
 import dev.cordis.core.Plugin;
 import org.junit.jupiter.api.Test;
 
@@ -25,7 +25,7 @@ class ServiceAccessTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 assertEquals("v", ctx.get("svc"));
                 return null;
             }
@@ -34,7 +34,7 @@ class ServiceAccessTest {
 
     @Test
     void undeclaredAccessFromPluginContextThrows() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         // provider is a PLUGIN fiber: its binding is not ambient authority
         root.plugin(new Plugin() {
             @Override
@@ -43,14 +43,14 @@ class ServiceAccessTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 ctx.provide("svc", "v");
                 return null;
             }
         }).await();
         Fiber fiber = root.plugin(new Plugin() {
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 return null;
             }
         }).await();
@@ -61,8 +61,8 @@ class ServiceAccessTest {
 
     @Test
     void declaredAccessOnUnloadedFiberThrowsInactive() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
-        final dev.cordis.core.Context[] captured = new dev.cordis.core.Context[1];
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
+        final dev.cordis.core.runtime.Context[] captured = new dev.cordis.core.runtime.Context[1];
         Fiber fiber = root.plugin(new Plugin() {
             @Override
             public List<String> inject() {
@@ -70,12 +70,12 @@ class ServiceAccessTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 captured[0] = ctx;
                 return null;
             }
         });
-        assertEquals(dev.cordis.core.FiberState.PENDING, fiber.state);
+        assertEquals(dev.cordis.core.runtime.FiberState.PENDING, fiber.state);
         // the fiber declares svc but has not loaded: access fails with INACTIVE_ACCESS
         dev.cordis.core.CordisException e = assertThrows(dev.cordis.core.CordisException.class,
                 () -> fiber.ctx.get("svc"));
@@ -85,7 +85,7 @@ class ServiceAccessTest {
 
     @Test
     void rootAccessIsNonStrict() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         root.provide("any", 42);
         assertEquals(42, ((Number) root.get("any")).intValue());
         assertNull(root.get("missing"));
@@ -93,11 +93,11 @@ class ServiceAccessTest {
 
     @Test
     void setRules() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
-        final dev.cordis.core.Context[] captured = new dev.cordis.core.Context[1];
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
+        final dev.cordis.core.runtime.Context[] captured = new dev.cordis.core.runtime.Context[1];
         root.plugin(new Plugin() {
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 captured[0] = ctx;
                 ctx.provide("state", "initial");
                 ctx.set("state", "updated"); // the providing fiber may set

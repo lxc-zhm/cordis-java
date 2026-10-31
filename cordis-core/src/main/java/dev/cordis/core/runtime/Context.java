@@ -1,4 +1,12 @@
-package dev.cordis.core;
+package dev.cordis.core.runtime;
+
+import dev.cordis.core.CordisException;
+import dev.cordis.core.Plugin;
+import dev.cordis.core.coeffect.Impl;
+import dev.cordis.core.coeffect.ReflectService;
+import dev.cordis.core.coeffect.RealmKey;
+import dev.cordis.core.effect.Disposable;
+import dev.cordis.core.effect.EffectCallback;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -212,7 +220,7 @@ public final class Context {
      */
     public void set(String name, Object value) {
         RealmKey key = resolveRealm(name);
-        Impl impl = rootRef.reflect.store.get(key);
+        Impl impl = rootRef.reflect.bindingAt(key);
         if (impl == null) {
             throw new CordisException(CordisException.Code.INVALID_SET,
                     "cannot set property \"" + name + "\" without provide");

@@ -1,4 +1,6 @@
-package dev.cordis.core;
+package dev.cordis.core.effect;
+
+import dev.cordis.core.runtime.Context;
 
 import java.util.List;
 

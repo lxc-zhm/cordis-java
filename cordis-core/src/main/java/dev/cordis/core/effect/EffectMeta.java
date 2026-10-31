@@ -1,4 +1,4 @@
-package dev.cordis.core;
+package dev.cordis.core.effect;
 
 import java.util.ArrayList;
 import java.util.List;

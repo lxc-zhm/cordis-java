@@ -1,7 +1,6 @@
 package dev.cordis;
 
-import dev.cordis.core.Fiber;
-import dev.cordis.core.FiberState;
+import dev.cordis.core.runtime.FiberState;
 import dev.cordis.core.Plugin;
 import dev.cordis.core.ValidationException;
 import dev.cordis.loader.ComponentLoader;
@@ -40,7 +39,7 @@ class LoaderTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 loads.incrementAndGet();
                 seenConfig.set(config);
                 return null;
@@ -58,7 +57,7 @@ class LoaderTest {
         AtomicReference<Object> bConfig = new AtomicReference<>();
         registry.modules.put("mod-b", () -> counterPlugin("b", bLoads, bConfig));
 
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         ComponentLoader loader = new ComponentLoader(root, registry);
 
         loader.load(List.of(
@@ -87,7 +86,7 @@ class LoaderTest {
         AtomicInteger loads = new AtomicInteger();
         registry.modules.put("mod", () -> counterPlugin("m", loads, new AtomicReference<>()));
 
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         ComponentLoader loader = new ComponentLoader(root, registry);
 
         loader.load(List.of(Entry.of("m", "mod").disabled(true).build()));
@@ -110,7 +109,7 @@ class LoaderTest {
         registry.modules.put("v1", () -> counterPlugin("v1", v1Loads, new AtomicReference<>()));
         registry.modules.put("v2", () -> counterPlugin("v2", v2Loads, new AtomicReference<>()));
 
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         ComponentLoader loader = new ComponentLoader(root, registry);
         loader.load(List.of(Entry.of("m", "v1").build()));
         loader.load(List.of(Entry.of("m", "v2").build()));
@@ -139,12 +138,12 @@ class LoaderTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 return null;
             }
         });
 
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         ComponentLoader loader = new ComponentLoader(root, registry);
         loader.load(List.of(Entry.of("s", "strict").config(3).build()));
         assertEquals(FiberState.ACTIVE, loader.mounted("s").fiber.state);
@@ -165,7 +164,7 @@ class LoaderTest {
     @Test
     void mountUnderMissingModuleIsReportedNotThrown() {
         Registry registry = new Registry();
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         ComponentLoader loader = new ComponentLoader(root, registry);
         loader.load(List.of(Entry.of("x", "missing").build()));
         assertNull(loader.mounted("x").fiber);

@@ -1,9 +1,9 @@
 package dev.cordis;
 
 import dev.cordis.core.CordisException;
-import dev.cordis.core.Disposable;
-import dev.cordis.core.Fiber;
-import dev.cordis.core.FiberState;
+import dev.cordis.core.effect.Disposable;
+import dev.cordis.core.runtime.Fiber;
+import dev.cordis.core.runtime.FiberState;
 import dev.cordis.core.Plugin;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +24,7 @@ class LifecycleTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 if (log != null) log.add("provider-up");
                 Disposable d = ctx.provide("svc", value);
                 return (Disposable) () -> {
@@ -49,7 +49,7 @@ class LifecycleTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 String svc = ctx.get("svc");
                 log.add("consumer-up:" + svc);
                 return (Disposable) () -> log.add("consumer-down");
@@ -60,7 +60,7 @@ class LifecycleTest {
     @Test
     void consumerWaitsThenActivatesOnProvide() {
         List<String> log = new ArrayList<>();
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         Fiber consumerFiber = root.plugin(consumer(log));
         assertEquals(FiberState.PENDING, consumerFiber.state);
         assertTrue(log.isEmpty());
@@ -73,7 +73,7 @@ class LifecycleTest {
     @Test
     void withdrawingProviderDeactivatesThenReprovideReactivates() {
         List<String> log = new ArrayList<>();
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         Fiber consumerFiber = root.plugin(consumer(log));
         Fiber providerFiber = root.plugin(provider("v1", log)).await();
         assertEquals(FiberState.ACTIVE, consumerFiber.state);
@@ -93,7 +93,7 @@ class LifecycleTest {
     @Test
     void providerReplacementReloadsConsumerAgainstNewFiber() {
         List<String> log = new ArrayList<>();
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         root.plugin(consumer(log));
         Fiber p1 = root.plugin(provider("v1", null)).await();
         p1.dispose();
@@ -104,7 +104,7 @@ class LifecycleTest {
 
     @Test
     void duplicateProvideInSameRealmThrows() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         root.plugin(provider("a", null)).await();
         assertThrows(CordisException.class, () -> root.provide("svc", "b"));
     }
@@ -112,7 +112,7 @@ class LifecycleTest {
     @Test
     void restartUnloadsAndReloadsWithSameConfig() {
         List<String> log = new ArrayList<>();
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         Fiber fiber = root.plugin(new Plugin() {
             @Override
             public String name() {
@@ -120,7 +120,7 @@ class LifecycleTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 log.add("up:" + config);
                 return (Disposable) () -> log.add("down");
             }
@@ -134,7 +134,7 @@ class LifecycleTest {
     @Test
     void updateAppliesNewConfigBehindTheWaterfall() {
         List<String> log = new ArrayList<>();
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         Fiber fiber = root.plugin(new Plugin() {
             @Override
             public String name() {
@@ -142,7 +142,7 @@ class LifecycleTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 log.add("up:" + config);
                 return (Disposable) () -> log.add("down");
             }

@@ -1,4 +1,4 @@
-package dev.cordis.core;
+package dev.cordis.core.runtime;
 
 /**
  * 一个插件实例(fiber)的生命周期状态。

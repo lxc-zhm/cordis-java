@@ -1,4 +1,4 @@
 .vscode/*
+.idea/
 cordis-example/target/
-
 cordis-core/target/

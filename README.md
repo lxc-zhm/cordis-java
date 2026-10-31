@@ -17,20 +17,31 @@ Java 25 实现的 **Cordis** —— 时空可组合性(spatiotemporal composabil
 
 ```
 cordis-core
-├── dev.cordis.core        核心库(§5.1)
-│   ├── Context            一等上下文:服务解析(Algorithm 6 逐 fiber 链行走)、isolate/intercept 派生
-│   ├── Fiber              生命周期状态机(PENDING/LOADING/ACTIVE/FAILED/UNLOADING/DISPOSED,
-│   │                      epoch=提供者 uid 摘要,reload/unload 惰性互链 = 惯性主机 §4.4 / Algorithm 5)
-│   ├── ReflectService     服务存储(按 realm 键控)、provide、notify(Algorithm 3)
-│   ├── RegistryService    插件注册表:plugin() 即 O-Insert,其逆即 O-Retire(Definition 52)
-│   ├── EventsService      事件总线(on/emit/bail/waterfall,监听器是可回退效应)
-│   ├── Logger(+Service)   命名日志门面
-│   └── Service            服务基类:构造即 provide,随 fiber 卸载自动注销
-├── dev.cordis.loader      声明式组件加载器(§5.2.1)
-│   ├── Entry              配置项:id/url/isolate/intercept/config/disabled(Definition 81)
-│   └── ComponentLoader    按 id 调和;逐字段分发(url 重建、config→fiber.update、disabled 卸载/重载);
-│                          正确性由 Theorem 80(终态只依赖最终配置)保证
-└── dev.cordis.hmr         热模块替换(§5.2.2,Algorithm 8–10)
+├── dev.cordis.core             根包:各处共用的基础类型
+│   ├── Plugin / ConfigSchema   插件定义与配置校验器
+│   └── CordisException / ValidationException  统一异常(带稳定错误码)
+├── dev.cordis.core.effect      可回退效应(§3.1,算法 1):怎么登记、怎么撤销
+│   ├── Disposable              撤销动作(效应的"逆变换")
+│   ├── EffectCallback          效果体:返回单个撤销动作;返回 Iterable 即多阶段(阶段间可被打断)
+│   └── EffectMeta              效果诊断树
+├── dev.cordis.core.coeffect    余效应/服务依赖(§3.2,算法 2/3):需要什么、由谁提供
+│   ├── ReflectService          全局服务仓库(按 realm 键控)+ notify 变更广播
+│   ├── Impl                    一条服务绑定(提供者 fiber + 值 + 可用性检查)
+│   ├── RealmKey                隔离域标识:同名服务在不同域各有一条绑定
+│   └── Service                 服务基类:构造即 provide,随 fiber 卸载自动注销
+├── dev.cordis.core.runtime     运行时(§4/§5.1,算法 4/5/6):把上面两块粘成会自转的机器
+│   ├── Context                 一等上下文:服务解析(算法 6)、isolate/intercept 派生、plugin() 挂载
+│   ├── Fiber                   生命周期状态机(PENDING/LOADING/ACTIVE/FAILED/UNLOADING/DISPOSED,惰性链式)
+│   ├── FiberState              状态枚举
+│   ├── RegistryService         插件注册表:plugin() 即 O-Insert,其逆即 O-Retire(Definition 52)
+│   ├── PluginRuntime           同一插件共享的运行时记录
+│   ├── EventsService           事件总线(on/emit/bail/waterfall,监听器是可回退效应)
+│   └── Logger(+Service)        命名日志门面
+├── dev.cordis.loader           声明式组件加载器(§5.2.1)
+│   ├── Entry                   配置项:id/url/isolate/intercept/config/disabled(Definition 81)
+│   ├── PluginResolver          url → 插件(模块引入/撤出交给宿主)
+│   └── ComponentLoader         按 id 调和;逐字段分发;正确性由 Theorem 80 保证
+└── dev.cordis.hmr              热模块替换(§5.2.2,算法 8–10)
     ├── HmrEngine.classify      阶段 1:模块分类不动点(环上未决默认 declined)
     ├── HmrEngine.detectStale   阶段 2:陈旧 entry 检测(依赖树 ∩ accepted)
     └── HmrEngine.reload        阶段 3:事务性重载(失败即从上一组件回滚,无半重载状态)

@@ -1,4 +1,9 @@
-package dev.cordis.core;
+package dev.cordis.core.coeffect;
+
+import dev.cordis.core.runtime.Context;
+import dev.cordis.core.runtime.Fiber;
+import dev.cordis.core.runtime.FiberState;
+import dev.cordis.core.runtime.PluginRuntime;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -22,12 +27,12 @@ public final class ReflectService {
     /** 服务绑定表:key 是隔离域,value 是绑定。 */
     final Map<RealmKey, Impl> store = new LinkedHashMap<>();
 
-    ReflectService(Context root) {
+    public ReflectService(Context root) {
         this.root = root;
     }
 
     /** 取某服务名的默认共享域,没有就创建。 */
-    RealmKey globalRealm(String name) {
+    public RealmKey globalRealm(String name) {
         RealmKey key = globalRealms.get(name);
         if (key == null) {
             key = RealmKey.fresh(name);
@@ -42,12 +47,36 @@ public final class ReflectService {
      *
      * @param strict 为 true 时,只返回提供者 fiber 正处于 ACTIVE 状态的绑定
      */
-    Impl getImpl(Context from, String name, boolean strict) {
+    public Impl getImpl(Context from, String name, boolean strict) {
         RealmKey key = from.resolveRealm(name);
         Impl impl = store.get(key);
         if (impl == null) return null;
         if (strict && impl.fiber.state != FiberState.ACTIVE) return null;
         return impl;
+    }
+
+    /** 读取某隔离域上的一条绑定;没有返回 null。 */
+    public Impl bindingAt(RealmKey key) {
+        return store.get(key);
+    }
+
+    /** 写入(或覆盖)一条绑定。 */
+    public void bind(RealmKey key, Impl impl) {
+        store.put(key, impl);
+    }
+
+    /** 注销一条绑定。 */
+    public void unbind(RealmKey key) {
+        store.remove(key);
+    }
+
+    /** 列出某个 fiber 提供的所有绑定(供生命周期通知使用)。 */
+    public java.util.List<Impl> bindingsOf(Fiber fiber) {
+        java.util.List<Impl> out = new java.util.ArrayList<>();
+        for (Impl impl : store.values()) {
+            if (impl.fiber == fiber) out.add(impl);
+        }
+        return out;
     }
 
     /** 默认通知范围:只通知与发起方在同一隔离域里解析该服务的 fiber。 */

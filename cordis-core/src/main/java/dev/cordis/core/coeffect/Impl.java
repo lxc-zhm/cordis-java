@@ -1,4 +1,6 @@
-package dev.cordis.core;
+package dev.cordis.core.coeffect;
+
+import dev.cordis.core.runtime.Fiber;
 
 import java.util.function.Predicate;
 
@@ -19,7 +21,7 @@ public final class Impl {
     /** 可选的“是否可用”检查:依赖方加载前会先问一次。 */
     public final Predicate<Object> check;
 
-    Impl(String name, Fiber fiber, Object value, Predicate<Object> check) {
+    public Impl(String name, Fiber fiber, Object value, Predicate<Object> check) {
         this.name = name;
         this.fiber = fiber;
         this.value = value;

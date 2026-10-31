@@ -1,9 +1,9 @@
 package dev.cordis;
 
-import dev.cordis.core.Disposable;
-import dev.cordis.core.EffectCallback;
-import dev.cordis.core.Fiber;
-import dev.cordis.core.FiberState;
+import dev.cordis.core.effect.Disposable;
+import dev.cordis.core.effect.EffectCallback;
+import dev.cordis.core.runtime.Fiber;
+import dev.cordis.core.runtime.FiberState;
 import dev.cordis.core.Plugin;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +24,7 @@ class EffectTrackingTest {
             }
 
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 for (String n : names) {
                     ctx.effect(cb -> {
                         log.add("open:" + n);
@@ -39,7 +39,7 @@ class EffectTrackingTest {
     @Test
     void effectsUnwindInLifoOrderOnFiberUnload() {
         List<String> log = new ArrayList<>();
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         Fiber fiber = root.plugin(effectsPlugin(log, "a", "b", "c")).await();
         assertEquals(FiberState.ACTIVE, fiber.state);
         assertEquals(List.of("open:a", "open:b", "open:c"), log);
@@ -53,7 +53,7 @@ class EffectTrackingTest {
     @Test
     void explicitDisposeRunsOnce() {
         List<String> log = new ArrayList<>();
-        dev.cordis.core.Context ctx = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context ctx = dev.cordis.core.runtime.Context.createRoot();
         Disposable d = ctx.effect(cb -> {
             log.add("open");
             return (Disposable) () -> log.add("close");
@@ -71,10 +71,10 @@ class EffectTrackingTest {
     @Test
     void multiStageIterableCollectsEveryStage() {
         List<String> log = new ArrayList<>();
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         Fiber fiber = root.plugin(new Plugin() {
             @Override
-            public Object apply(dev.cordis.core.Context ctx, Object config) {
+            public Object apply(dev.cordis.core.runtime.Context ctx, Object config) {
                 return java.util.Arrays.asList( // a lazy multi-stage effect
                         (Disposable) () -> log.add("undo-1"),
                         (Disposable) () -> log.add("undo-2"),
@@ -87,7 +87,7 @@ class EffectTrackingTest {
 
     @Test
     void effectOnDisposedFiberThrows() {
-        dev.cordis.core.Context root = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context root = dev.cordis.core.runtime.Context.createRoot();
         Fiber fiber = root.plugin(Plugin.of("p", List.of(), (ctx, cfg) -> null)).await();
         fiber.dispose();
         assertThrows(dev.cordis.core.CordisException.class,
@@ -97,7 +97,7 @@ class EffectTrackingTest {
     @Test
     void nullResultIsAnEffectWithNothingToUndo() {
         assertDoesNotThrow(() -> EffectCallback.flatten(null));
-        dev.cordis.core.Context ctx = dev.cordis.core.Context.createRoot();
+        dev.cordis.core.runtime.Context ctx = dev.cordis.core.runtime.Context.createRoot();
         assertDoesNotThrow(() -> ctx.effect(cb -> null, "empty"));
     }
 }

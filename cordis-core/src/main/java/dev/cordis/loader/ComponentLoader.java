@@ -1,10 +1,10 @@
 package dev.cordis.loader;
 
-import dev.cordis.core.Context;
-import dev.cordis.core.Fiber;
-import dev.cordis.core.Logger;
+import dev.cordis.core.runtime.Context;
+import dev.cordis.core.runtime.Fiber;
+import dev.cordis.core.runtime.Logger;
 import dev.cordis.core.Plugin;
-import dev.cordis.core.RealmKey;
+import dev.cordis.core.coeffect.RealmKey;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

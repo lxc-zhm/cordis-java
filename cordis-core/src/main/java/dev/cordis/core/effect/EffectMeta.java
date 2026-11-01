@@ -25,7 +25,7 @@ public final class EffectMeta {
     }
 
     private void render(StringBuilder sb, int depth) {
-        sb.append("  ".repeat(depth)).append(label).append('\n');
+        sb.repeat("  ", depth).append(label).append('\n');
         for (EffectMeta child : children) child.render(sb, depth + 1);
     }
 }

@@ -41,19 +41,6 @@ public final class Context {
 
     private final Object runtimeLock = new Object();
 
-    /**
-     * Serialize runtime changes, including completions from arbitrary executors. Never block in this section.
-     */
-    public <T> T atomic(java.util.function.Supplier<T> action) {
-        synchronized (rootRef.runtimeLock) {
-            return action.get();
-        }
-    }
-
-    public boolean inRuntime() {
-        return Thread.holdsLock(rootRef.runtimeLock);
-    }
-
     private Fiber fiber;
     private ReflectService reflect;   // root only
     private RegistryService registry; // root only
@@ -79,6 +66,20 @@ public final class Context {
     }
 
     // ---------------------------------------------------------------- structure
+
+
+    /**
+     * Serialize runtime changes, including completions from arbitrary executors. Never block in this section.
+     */
+    public <T> T atomic(java.util.function.Supplier<T> action) {
+        synchronized (rootRef.runtimeLock) {
+            return action.get();
+        }
+    }
+
+    public boolean inRuntime() {
+        return Thread.holdsLock(rootRef.runtimeLock);
+    }
 
     public Context getParent() {
         return parent;

@@ -1,0 +1,4 @@
+- id: hello
+  url: HelloPlugin.java
+  config:
+    message: Hello from a live Java module

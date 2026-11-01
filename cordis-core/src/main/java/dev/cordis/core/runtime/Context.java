@@ -2,6 +2,7 @@ package dev.cordis.core.runtime;
 
 import dev.cordis.core.CordisException;
 import dev.cordis.core.Plugin;
+import dev.cordis.core.coeffect.ContextualService;
 import dev.cordis.core.coeffect.Impl;
 import dev.cordis.core.coeffect.ReflectService;
 import dev.cordis.core.coeffect.RealmKey;
@@ -13,6 +14,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Predicate;
 
 /**
@@ -325,7 +327,7 @@ public final class Context {
     /**
      * 简写:等依赖齐了就执行回调,依赖换了自动重跑。
      */
-    public Fiber inject(List<String> deps, java.util.function.BiFunction<Context, Object, Object> body) {
+    public Fiber inject(List<String> deps, BiFunction<Context, Object, Object> body) {
         return registry().inject(this, deps, body);
     }
 
@@ -356,7 +358,7 @@ public final class Context {
      * Resolve a context-aware service view without changing the shared service state.
      */
     private Object contextualize(Object value) {
-        return value instanceof dev.cordis.core.coeffect.ContextualService<?> service ? service.inContext(this) : value;
+        return value instanceof ContextualService<?> service ? service.inContext(this) : value;
     }
 
     public java.util.concurrent.CompletionStage<Void> disposeAsync() {

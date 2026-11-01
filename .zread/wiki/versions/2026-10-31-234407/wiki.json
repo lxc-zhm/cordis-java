@@ -1,0 +1,227 @@
+{
+  "id": "2026-10-31-234407",
+  "generated_at": "2026-10-31T15:44:07.332104Z",
+  "language": "zh",
+  "pages": [
+    {
+      "slug": "1-xiang-mu-gai-lan-cordis-java-shi-shi-yao",
+      "title": "项目概览：cordis-java 是什么",
+      "file": "1-xiang-mu-gai-lan-cordis-java-shi-shi-yao.md",
+      "section": "快速开始",
+      "level": "Beginner"
+    },
+    {
+      "slug": "2-huan-jing-zhun-bei-yu-gou-jian-yun-xing-jdk-25-maven",
+      "title": "环境准备与构建运行（JDK 25 / Maven）",
+      "file": "2-huan-jing-zhun-bei-yu-gou-jian-yun-xing-jdk-25-maven.md",
+      "section": "快速开始",
+      "level": "Beginner"
+    },
+    {
+      "slug": "3-di-ge-cordis-cha-jian-context-plugin-yu-fiber",
+      "title": "第一个 Cordis 插件：Context、Plugin 与 Fiber",
+      "file": "3-di-ge-cordis-cha-jian-context-plugin-yu-fiber.md",
+      "section": "快速开始",
+      "level": "Beginner"
+    },
+    {
+      "slug": "4-dian-shang-ding-dan-shi-li-yun-xing-yu-ye-wu-liu-cheng-dao-lan",
+      "title": "电商订单示例：运行与业务流程导览",
+      "file": "4-dian-shang-ding-dan-shi-li-yun-xing-yu-ye-wu-liu-cheng-dao-lan.md",
+      "section": "快速开始",
+      "level": "Beginner"
+    },
+    {
+      "slug": "5-liu-tai-sheng-ming-zhou-qi-mo-xing-pending-dao-disposed-de-zhuan-huan-yu-await-yu-yi",
+      "title": "六态生命周期模型：PENDING 到 DISPOSED 的转换与 await 语义",
+      "file": "5-liu-tai-sheng-ming-zhou-qi-mo-xing-pending-dao-disposed-de-zhuan-huan-yu-await-yu-yi.md",
+      "section": "深入解析",
+      "group": "核心运行时与生命周期",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "6-xiao-ying-yu-zi-yuan-hui-tui-disposable-lifo-ni-cao-zuo-yu-shi-bai-bu-zu-duan-qing-li",
+      "title": "效应与资源回退：Disposable、LIFO 逆操作与失败不阻断清理",
+      "file": "6-xiao-ying-yu-zi-yuan-hui-tui-disposable-lifo-ni-cao-zuo-yu-shi-bai-bu-zu-duan-qing-li.md",
+      "section": "深入解析",
+      "group": "核心运行时与生命周期",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "7-yi-bu-xiao-ying-completionstage-asynceffect-next-yu-asyncdisposable",
+      "title": "异步效应：CompletionStage、AsyncEffect.next 与 AsyncDisposable",
+      "file": "7-yi-bu-xiao-ying-completionstage-asynceffect-next-yu-asyncdisposable.md",
+      "section": "深入解析",
+      "group": "核心运行时与生命周期",
+      "level": "Advanced"
+    },
+    {
+      "slug": "8-xiang-ying-shi-yi-lai-provide-get-neng-li-jian-cha-yu-pending-zi-dong-ji-huo",
+      "title": "响应式依赖：provide/get 能力检查与 PENDING 自动激活",
+      "file": "8-xiang-ying-shi-yi-lai-provide-get-neng-li-jian-cha-yu-pending-zi-dong-ji-huo.md",
+      "section": "深入解析",
+      "group": "核心运行时与生命周期",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "9-gen-shang-xia-wen-chuan-xing-hua-yu-fiber-suo-you-quan-de-bing-fa-she-ji",
+      "title": "根上下文串行化与 Fiber 所有权的并发设计",
+      "file": "9-gen-shang-xia-wen-chuan-xing-hua-yu-fiber-suo-you-quan-de-bing-fa-she-ji.md",
+      "section": "深入解析",
+      "group": "核心运行时与生命周期",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "10-isolate-yu-realmkey-si-you-yu-gong-xiang-yu-yu-pei-zhi-he-bing",
+      "title": "isolate 与 RealmKey：私有域、共享域与配置合并",
+      "file": "10-isolate-yu-realmkey-si-you-yu-gong-xiang-yu-yu-pei-zhi-he-bing.md",
+      "section": "深入解析",
+      "group": "上下文隔离与服务拦截",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "11-contextualservice-diao-yong-zhe-shi-tu-jvm-shang-lan-jie-de-ju-ti-lei-gua-pei-fang-an",
+      "title": "ContextualService 调用者视图：JVM 上拦截的具体类适配方案",
+      "file": "11-contextualservice-diao-yong-zhe-shi-tu-jvm-shang-lan-jie-de-ju-ti-lei-gua-pei-fang-an.md",
+      "section": "深入解析",
+      "group": "上下文隔离与服务拦截",
+      "level": "Advanced"
+    },
+    {
+      "slug": "12-intercept-yuan-di-geng-xin-yu-zu-hu-ge-chi-shi-zhan-dian-shang-shuang-dian-pu",
+      "title": "intercept 原地更新与租户隔离实战（电商双店铺）",
+      "file": "12-intercept-yuan-di-geng-xin-yu-zu-hu-ge-chi-shi-zhan-dian-shang-shuang-dian-pu.md",
+      "section": "深入解析",
+      "group": "上下文隔离与服务拦截",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "13-componentloader-diao-he-ji-zhi-entry-chai-fen-yu-id-url-disabled-config-geng-xin-ce-lue",
+      "title": "ComponentLoader 调和机制：Entry 差分与 id/url/disabled/config 更新策略",
+      "file": "13-componentloader-diao-he-ji-zhi-entry-chai-fen-yu-id-url-disabled-config-geng-xin-ce-lue.md",
+      "section": "深入解析",
+      "group": "声明式配置树",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "14-yaml-json-pei-zhi-ge-shi-group-include-yu-xun-huan-yin-yong-jian-ce",
+      "title": "YAML/JSON 配置格式：group、include 与循环引用检测",
+      "file": "14-yaml-json-pei-zhi-ge-shi-group-include-yu-xun-huan-yin-yong-jian-ce.md",
+      "section": "深入解析",
+      "group": "声明式配置树",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "15-pei-zhi-hui-xie-yu-yuan-zi-xie-wen-jian-fiber-update-de-chi-jiu-hua-xie-yi",
+      "title": "配置回写与原子写文件：fiber.update 的持久化协议",
+      "file": "15-pei-zhi-hui-xie-yu-yuan-zi-xie-wen-jian-fiber-update-de-chi-jiu-hua-xie-yi.md",
+      "section": "深入解析",
+      "group": "声明式配置树",
+      "level": "Advanced"
+    },
+    {
+      "slug": "16-configwatcher-wen-jian-jian-ting-fang-dou-cuo-wu-bao-liu-yuan-shu-yu-loader-shi-jian",
+      "title": "ConfigWatcher 文件监听：防抖、错误保留原树与 loader 事件",
+      "file": "16-configwatcher-wen-jian-jian-ting-fang-dou-cuo-wu-bao-liu-yuan-shu-yu-loader-shi-jian.md",
+      "section": "深入解析",
+      "group": "声明式配置树",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "17-javamoduleresolver-jdk-dong-tai-bian-yi-yu-zhu-dai-classloader-ge-chi",
+      "title": "JavaModuleResolver：JDK 动态编译与逐代 ClassLoader 隔离",
+      "file": "17-javamoduleresolver-jdk-dong-tai-bian-yi-yu-zhu-dai-classloader-ge-chi.md",
+      "section": "深入解析",
+      "group": "JVM 源码热更新（HMR）",
+      "level": "Advanced"
+    },
+    {
+      "slug": "18-hmrengine-shi-wu-xing-ti-huan-mo-kuai-fen-lei-shi-bai-hui-gun-yu-chen-jiu-tiao-mu-jian-ce",
+      "title": "HmrEngine 事务性替换：模块分类、失败回滚与陈旧条目检测",
+      "file": "18-hmrengine-shi-wu-xing-ti-huan-mo-kuai-fen-lei-shi-bai-hui-gun-yu-chen-jiu-tiao-mu-jian-ce.md",
+      "section": "深入解析",
+      "group": "JVM 源码热更新（HMR）",
+      "level": "Advanced"
+    },
+    {
+      "slug": "19-bao-shou-yin-yong-fen-xi-wei-shi-yao-re-geng-xin-hui-zhong-zai-zheng-ge-yuan-ma-mu-lu",
+      "title": "保守引用分析：为什么热更新会重载整个源码目录",
+      "file": "19-bao-shou-yin-yong-fen-xi-wei-shi-yao-re-geng-xin-hui-zhong-zai-zheng-ge-yuan-ma-mu-lu.md",
+      "section": "深入解析",
+      "group": "JVM 源码热更新（HMR）",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "20-gua-pei-bian-jie-externals-restart-required-yu-bu-zhi-chi-de-chang-jing",
+      "title": "适配边界：externals、restart-required 与不支持的场景",
+      "file": "20-gua-pei-bian-jie-externals-restart-required-yu-bu-zhi-chi-de-chang-jing.md",
+      "section": "深入解析",
+      "group": "JVM 源码热更新（HMR）",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "21-shi-jian-xi-tong-zuo-yong-yu-once-parallelasync-serialasync-yu-waterfall",
+      "title": "事件系统：作用域、once、parallelAsync/serialAsync 与 waterfall",
+      "file": "21-shi-jian-xi-tong-zuo-yong-yu-once-parallelasync-serialasync-yu-waterfall.md",
+      "section": "深入解析",
+      "group": "周边服务",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "22-ri-zhi-accessor-mixin-call-yu-timerservice",
+      "title": "日志、accessor/mixin/call 与 TimerService",
+      "file": "22-ri-zhi-accessor-mixin-call-yu-timerservice.md",
+      "section": "深入解析",
+      "group": "周边服务",
+      "level": "Beginner"
+    },
+    {
+      "slug": "23-dian-shang-shi-li-jia-gou-cha-jian-zhi-ze-fu-wu-zu-zhuang-yu-ben-di-sha-xiang-gua-pei-qi",
+      "title": "电商示例架构：插件职责、服务组装与本地沙箱适配器",
+      "file": "23-dian-shang-shi-li-jia-gou-cha-jian-zhi-ze-fu-wu-zu-zhuang-yu-ben-di-sha-xiang-gua-pei-qi.md",
+      "section": "深入解析",
+      "group": "示例工程剖析",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "24-ke-guan-cha-de-ye-wu-xing-wei-mi-deng-bu-chang-jiang-ji-yu-cu-xiao-re-ti-huan",
+      "title": "可观察的业务行为：幂等、补偿、降级与促销热替换",
+      "file": "24-ke-guan-cha-de-ye-wu-xing-wei-mi-deng-bu-chang-jiang-ji-yu-cu-xiao-re-ti-huan.md",
+      "section": "深入解析",
+      "group": "示例工程剖析",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "25-re-geng-xin-yan-shi-ying-yong-cordisapplication-yu-examples-hot-reload",
+      "title": "热更新演示应用：CordisApplication 与 examples/hot-reload",
+      "file": "25-re-geng-xin-yan-shi-ying-yong-cordisapplication-yu-examples-hot-reload.md",
+      "section": "深入解析",
+      "group": "示例工程剖析",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "26-ce-shi-ti-xi-93-ge-ce-shi-yong-li-fu-gai-de-xing-wei-yu-yu-yi-bian-jie",
+      "title": "测试体系：93 个测试用例覆盖的行为与语义边界",
+      "file": "26-ce-shi-ti-xi-93-ge-ce-shi-yong-li-fu-gai-de-xing-wei-yu-yu-yi-bian-jie.md",
+      "section": "深入解析",
+      "group": "工程实践与验证",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "27-lun-wen-qian-ti-yu-yu-yi-bian-jie-kuang-jia-bu-bao-zheng-de-hui-tui-zheng-que-xing",
+      "title": "论文前提与语义边界：框架不保证的回退正确性",
+      "file": "27-lun-wen-qian-ti-yu-yu-yi-bian-jie-kuang-jia-bu-bao-zheng-de-hui-tui-zheng-que-xing.md",
+      "section": "深入解析",
+      "group": "工程实践与验证",
+      "level": "Advanced"
+    },
+    {
+      "slug": "28-duo-mo-kuai-maven-xiang-mu-jie-gou-yu-yi-lai-ce-lue-jin-snakeyaml",
+      "title": "多模块 Maven 项目结构与依赖策略（仅 SnakeYAML）",
+      "file": "28-duo-mo-kuai-maven-xiang-mu-jie-gou-yu-yi-lai-ce-lue-jin-snakeyaml.md",
+      "section": "深入解析",
+      "group": "工程实践与验证",
+      "level": "Intermediate"
+    }
+  ]
+}
